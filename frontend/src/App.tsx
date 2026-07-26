@@ -19,13 +19,15 @@ function App() {
         <BrowserRouter>
           {/* Desktop-only persistent top nav (ADR-0013), 4 tabs (ADR-0026) */}
           <TopNav />
-          <Routes>
-            <Route path="/" element={<Navigate to="/ingest" replace />} />
-            <Route path="/ingest" element={<Ingest />} />
-            <Route path="/rules" element={<Rules />} />
-            <Route path="/graph" element={<Graph />} />
-            <Route path="/instances" element={<Instances />} />
-          </Routes>
+          <main className="mx-auto max-w-[1180px] px-6 pt-5">
+            <Routes>
+              <Route path="/" element={<Navigate to="/ingest" replace />} />
+              <Route path="/ingest" element={<Ingest />} />
+              <Route path="/rules" element={<Rules />} />
+              <Route path="/graph" element={<Graph />} />
+              <Route path="/instances" element={<Instances />} />
+            </Routes>
+          </main>
         </BrowserRouter>
         <Toaster />
       </ConfirmDialogProvider>
