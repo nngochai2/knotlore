@@ -8,29 +8,31 @@ import { listConfigs } from "@/api/configs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useConfirm } from "@/components/confirm-dialog";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 // Only "graph" (neo4j) is wired to a real sink adapter today
-// (app/pipeline/registry.py's SINKS) — a "vector" checkbox with nothing
-// behind it would just be a dishonest control, so it's left out entirely
-// until the vector-sink ticket registers "chroma" there.
+// (app/pipeline/registry.py's SINKS) — a "vector" card with nothing behind
+// it would just be a dishonest control, so it's left out entirely until
+// the vector-sink ticket registers "chroma" there.
 const SOURCE_TYPES: { value: string; label: string }[] = [
   { value: "obsidian", label: "Obsidian vault" },
   { value: "docx", label: "Documents folder" },
 ];
 const SINK_OPTIONS: { value: string; label: string }[] = [{ value: "neo4j", label: "Knowledge graph (Neo4j)" }];
 
+const STEPS = ["Source", "Destination", "Path & config", "Review & run"] as const;
+const NEW_INSTANCE = "__new__";
+
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 const OUTCOME_STYLES: Record<DocOutcome, string> = {
-  updated: "bg-emerald-100 text-emerald-800",
-  skipped: "bg-neutral-100 text-neutral-600",
-  removed: "bg-neutral-100 text-neutral-600",
-  failed: "bg-red-100 text-red-800",
+  updated: "bg-[var(--ok-soft)] text-[var(--ok)]",
+  skipped: "bg-[var(--surface-2)] text-[var(--ink-muted)]",
+  removed: "bg-[var(--surface-2)] text-[var(--ink-muted)]",
+  failed: "bg-[var(--fail-soft)] text-[var(--fail)]",
 };
 
 interface Draft {
@@ -40,11 +42,42 @@ interface Draft {
   sinks: string[];
 }
 
+/** A step-1/2 pick, styled like the validated prototype's vB-opt cards
+ * (prototype/loom-ui-flow, variant B "Guided Wizard"). */
+function OptionCard({
+  label,
+  chosen,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  chosen: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "rounded-lg border px-4 py-2.5 text-left text-sm transition-colors disabled:cursor-default",
+        chosen
+          ? "border-[var(--accent)] bg-[var(--accent-soft)] font-semibold text-[var(--accent-ink)]"
+          : "border-[var(--border)] text-[var(--ink)] enabled:hover:border-[var(--accent)]",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function Ingest() {
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
 
+  const [wizardStep, setWizardStep] = React.useState(1);
   const [mode, setMode] = React.useState<"existing" | "new">("new");
   const isExisting = mode === "existing";
   const [selectedInstanceId, setSelectedInstanceId] = React.useState<string>("");
@@ -63,6 +96,17 @@ export function Ingest() {
   const selectedInstance: Instance | undefined = instancesQuery.data?.instances.find(
     (i) => i.id === selectedInstanceId,
   );
+
+  function pickInstance(value: string) {
+    setWizardStep(1);
+    if (value === NEW_INSTANCE) {
+      setMode("new");
+      setSelectedInstanceId("");
+    } else {
+      setMode("existing");
+      setSelectedInstanceId(value);
+    }
+  }
 
   // An existing instance's source/path/sinks (its identity, ADR-0025) are
   // locked once chosen; its config is deliberately left editable — ADR-0025
@@ -157,13 +201,15 @@ export function Ingest() {
 
   const availableConfigs = (configsQuery.data?.configs ?? []).filter((c) => c.source_type === draft.sourceType);
   const identityLocked = isExisting;
+
+  const stepValid = [
+    draft.sourceType !== "",
+    draft.sinks.length > 0,
+    draft.sourcePath.trim() !== "" && configId !== "",
+    true,
+  ];
   const canRun =
-    draft.sourceType !== "" &&
-    draft.sourcePath.trim() !== "" &&
-    draft.sinks.length > 0 &&
-    configId !== "" &&
-    (!isExisting || selectedInstanceId !== "") &&
-    !runMutation.isPending;
+    stepValid[0] && stepValid[1] && stepValid[2] && (!isExisting || selectedInstanceId !== "") && !runMutation.isPending;
 
   const handleCancel = async () => {
     const confirmed = await confirm({
@@ -174,137 +220,184 @@ export function Ingest() {
     if (confirmed) cancelMutation.mutate();
   };
 
+  const sourceLabel = SOURCE_TYPES.find((s) => s.value === draft.sourceType)?.label ?? "—";
+  const sinkLabel = draft.sinks.map((s) => SINK_OPTIONS.find((o) => o.value === s)?.label ?? s).join(", ") || "—";
+  const configTitle = availableConfigs.find((c) => c.id === configId)?.title ?? configId ?? "—";
+  const instanceChipLabel = isExisting ? selectedInstance?.name ?? "…" : "New instance";
+
   return (
-    <div className="mx-auto max-w-3xl p-8">
-      <h1 className="text-lg font-semibold text-neutral-900">Ingest</h1>
+    <div className="pb-10">
+      <h1 className="mb-4 text-lg font-semibold text-[var(--ink)]">Ingest</h1>
 
-      <section className="mt-6 space-y-3">
-        <Label>Instance</Label>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant={!isExisting ? "default" : "outline"}
-            onClick={() => {
-              setMode("new");
-              setSelectedInstanceId("");
-            }}
-          >
-            New instance
-          </Button>
-          <Button
-            type="button"
-            variant={isExisting ? "default" : "outline"}
-            onClick={() => setMode("existing")}
-            disabled={(instancesQuery.data?.instances.length ?? 0) === 0}
-          >
-            Existing instance
-          </Button>
-        </div>
-
-        {isExisting && (
-          <Select value={selectedInstanceId} onValueChange={setSelectedInstanceId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Choose an instance…" />
-            </SelectTrigger>
-            <SelectContent>
-              {instancesQuery.data?.instances.map((instance) => (
-                <SelectItem key={instance.id} value={instance.id}>
-                  {instance.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {!isExisting && (
-          <div>
-            <Label htmlFor="instance-name">Name (optional)</Label>
-            <Input
-              id="instance-name"
-              value={draft.name}
-              onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="Auto-named from the path if left blank"
-            />
+      <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+        <div className="grid min-h-[420px] grid-cols-[210px_1fr]">
+          <div className="border-r border-[var(--border)] py-5">
+            {STEPS.map((label, i) => {
+              const n = i + 1;
+              const done = n < wizardStep;
+              const current = n === wizardStep;
+              return (
+                <div
+                  key={label}
+                  className={cn(
+                    "flex items-start gap-2.5 px-5 py-3 text-sm",
+                    current ? "font-bold text-[var(--ink)]" : "text-[var(--ink-faint)]",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px]",
+                      done && "border-[var(--ok)] bg-[var(--ok)] text-white",
+                      current && !done && "border-[var(--accent)] text-[var(--accent)]",
+                      !done && !current && "border-[var(--border)]",
+                    )}
+                  >
+                    {done ? "✓" : n}
+                  </div>
+                  {label}
+                </div>
+              );
+            })}
           </div>
-        )}
-      </section>
 
-      <section className="mt-6 space-y-4">
-        <div>
-          <Label htmlFor="source-type">Source type</Label>
-          <Select
-            value={draft.sourceType}
-            onValueChange={(value) => setDraft((prev) => ({ ...prev, sourceType: value }))}
-            disabled={identityLocked}
-          >
-            <SelectTrigger id="source-type">
-              <SelectValue placeholder="Choose a source…" />
-            </SelectTrigger>
-            <SelectContent>
-              {SOURCE_TYPES.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+          <div className="p-7">
+            <Select value={isExisting ? selectedInstanceId : NEW_INSTANCE} onValueChange={pickInstance}>
+              <SelectTrigger className="mb-4 h-auto w-fit gap-1.5 rounded-full border-0 bg-[var(--accent-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--accent-ink)]">
+                <span>Instance: {instanceChipLabel}</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NEW_INSTANCE}>+ New instance</SelectItem>
+                {instancesQuery.data?.instances.map((instance) => (
+                  <SelectItem key={instance.id} value={instance.id}>
+                    {instance.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <div>
-          <Label htmlFor="source-path">Path</Label>
-          <Input
-            id="source-path"
-            value={draft.sourcePath}
-            onChange={(e) => setDraft((prev) => ({ ...prev, sourcePath: e.target.value }))}
-            disabled={identityLocked}
-            placeholder="/path/to/vault-or-folder"
-          />
-        </div>
+            {wizardStep === 1 && (
+              <div>
+                <h2 className="mb-4 text-base font-semibold">Step 1 — Source</h2>
+                <div className="flex gap-2.5">
+                  {SOURCE_TYPES.map((s) => (
+                    <OptionCard
+                      key={s.value}
+                      label={s.label}
+                      chosen={draft.sourceType === s.value}
+                      disabled={identityLocked}
+                      onClick={() => setDraft((prev) => ({ ...prev, sourceType: s.value }))}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
-        <div>
-          <Label>Sinks</Label>
-          <div className="mt-1 flex flex-col gap-2">
-            {SINK_OPTIONS.map((sink) => (
-              <label key={sink.value} className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={draft.sinks.includes(sink.value)}
-                  disabled={identityLocked}
-                  onCheckedChange={(checked) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      sinks: checked ? [...prev.sinks, sink.value] : prev.sinks.filter((s) => s !== sink.value),
-                    }))
-                  }
-                />
-                {sink.label}
-              </label>
-            ))}
+            {wizardStep === 2 && (
+              <div>
+                <h2 className="mb-4 text-base font-semibold">Step 2 — Destination</h2>
+                <div className="flex gap-2.5">
+                  {SINK_OPTIONS.map((sink) => (
+                    <OptionCard
+                      key={sink.value}
+                      label={sink.label}
+                      chosen={draft.sinks.includes(sink.value)}
+                      disabled={identityLocked}
+                      onClick={() =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          sinks: prev.sinks.includes(sink.value)
+                            ? prev.sinks.filter((s) => s !== sink.value)
+                            : [...prev.sinks, sink.value],
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 3 && (
+              <div className="max-w-md space-y-4">
+                <h2 className="text-base font-semibold">Step 3 — Path & config</h2>
+                {!isExisting && (
+                  <div>
+                    <Label htmlFor="instance-name">Name (optional)</Label>
+                    <Input
+                      id="instance-name"
+                      value={draft.name}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="Auto-named from the path if left blank"
+                    />
+                  </div>
+                )}
+                <div>
+                  <Label htmlFor="source-path">Path</Label>
+                  <Input
+                    id="source-path"
+                    value={draft.sourcePath}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, sourcePath: e.target.value }))}
+                    disabled={identityLocked}
+                    placeholder="/path/to/vault-or-folder"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="config">Config</Label>
+                  <Select value={configId} onValueChange={setConfigId} disabled={draft.sourceType === ""}>
+                    <SelectTrigger id="config">
+                      <SelectValue placeholder="Choose a rule config…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableConfigs.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 4 && (
+              <div className="max-w-md">
+                <h2 className="mb-4 text-base font-semibold">Step 4 — Review & run</h2>
+                {[
+                  ["Instance", instanceChipLabel],
+                  ["Source", sourceLabel],
+                  ["Destination", sinkLabel],
+                  ["Path", draft.sourcePath || "—"],
+                  ["Config", configTitle],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between border-b border-[var(--border)] py-2 text-sm">
+                    <span className="text-[var(--ink-faint)]">{label}</span>
+                    <span className="font-mono text-[13px]">{value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-7 flex gap-2.5">
+              {wizardStep > 1 && (
+                <Button variant="outline" onClick={() => setWizardStep((s) => s - 1)}>
+                  Back
+                </Button>
+              )}
+              {wizardStep < 4 ? (
+                <Button onClick={() => setWizardStep((s) => s + 1)} disabled={!stepValid[wizardStep - 1]}>
+                  Next
+                </Button>
+              ) : (
+                <Button onClick={() => runMutation.mutate()} disabled={!canRun}>
+                  {runMutation.isPending ? "Starting…" : "Run"}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
-
-        <div>
-          <Label htmlFor="config">Config</Label>
-          <Select value={configId} onValueChange={setConfigId} disabled={draft.sourceType === ""}>
-            <SelectTrigger id="config">
-              <SelectValue placeholder="Choose a rule config…" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableConfigs.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Button onClick={() => runMutation.mutate()} disabled={!canRun}>
-          {runMutation.isPending ? "Starting…" : "Run"}
-        </Button>
-      </section>
+      </div>
 
       {job && (
-        <section className="mt-8 rounded-lg border border-neutral-200 p-4">
+        <section className="mt-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium capitalize">{job.status}</span>
             {(job.status === "pending" || job.status === "running") && (
@@ -314,21 +407,21 @@ export function Ingest() {
             )}
           </div>
 
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-neutral-100">
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
             <div
-              className="h-full bg-neutral-900 transition-all"
+              className="h-full bg-[var(--accent)] transition-all"
               style={{ width: `${Math.round(job.progress * 100)}%` }}
             />
           </div>
 
           {job.status === "failed" && job.error && (
-            <p className="mt-3 rounded-md bg-red-50 p-2 text-sm text-red-800">{job.error}</p>
+            <p className="mt-3 rounded-md bg-[var(--fail-soft)] p-2 text-sm text-[var(--fail)]">{job.error}</p>
           )}
 
           {job.doc_statuses.length > 0 && (
             <table className="mt-4 w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-neutral-200 text-neutral-500">
+                <tr className="border-b border-[var(--border)] text-[var(--ink-faint)]">
                   <th className="py-1 font-medium">Document</th>
                   <th className="py-1 font-medium">Outcome</th>
                   <th className="py-1 font-medium">Warning</th>
@@ -336,7 +429,7 @@ export function Ingest() {
               </thead>
               <tbody>
                 {job.doc_statuses.map((doc) => (
-                  <tr key={doc.doc_id} className="border-b border-neutral-100 align-top">
+                  <tr key={doc.doc_id} className="border-b border-[var(--border)] align-top">
                     <td className="py-1.5">{doc.doc_id}</td>
                     <td className="py-1.5">
                       <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium", OUTCOME_STYLES[doc.outcome])}>
@@ -344,11 +437,11 @@ export function Ingest() {
                       </span>
                     </td>
                     <td className="py-1.5">
-                      {doc.warning && <span className="text-amber-700">{doc.warning}</span>}
+                      {doc.warning && <span className="text-[var(--fail)]">{doc.warning}</span>}
                       {doc.error && (
                         <details>
-                          <summary className="cursor-pointer text-red-700">Error</summary>
-                          <p className="mt-1 whitespace-pre-wrap text-neutral-600">{doc.error}</p>
+                          <summary className="cursor-pointer text-[var(--fail)]">Error</summary>
+                          <p className="mt-1 whitespace-pre-wrap text-[var(--ink-muted)]">{doc.error}</p>
                         </details>
                       )}
                     </td>
@@ -361,7 +454,7 @@ export function Ingest() {
           {job.orphans.length > 0 && (
             <div className="mt-4">
               <h2 className="text-sm font-medium">Orphaned edges flagged</h2>
-              <ul className="mt-1 space-y-1 text-sm text-neutral-600">
+              <ul className="mt-1 space-y-1 text-sm text-[var(--ink-muted)]">
                 {job.orphans.map((orphan) => (
                   <li key={orphan.edge_id}>
                     {orphan.edge_id} — {orphan.reason}
