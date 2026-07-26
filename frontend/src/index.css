@@ -4,14 +4,50 @@
   --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Palette carried over from the validated prototype (prototype/loom-ui-flow
+ * branch, variant B "Guided Wizard") so the real Ingest page matches what
+ * was actually agreed on, not just its data flow. */
 :root {
   color-scheme: light;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --ink: #1b1f27;
+  --ink-muted: #5b6270;
+  --ink-faint: #8a90a0;
+  --border: #dde1e7;
+  --accent: #3b5fdb;
+  --accent-soft: #e8ecfb;
+  --accent-ink: #1f3fa8;
+  --ok: #2f8a4e;
+  --ok-soft: #e4f4e8;
+  --fail: #c1443b;
+  --fail-soft: #fbe8e6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161c;
+    --surface: #1c1f27;
+    --surface-2: #232733;
+    --ink: #e7e9ee;
+    --ink-muted: #a2a8b6;
+    --ink-faint: #6b7280;
+    --border: #333846;
+    --accent: #7897f6;
+    --accent-soft: #232c4d;
+    --accent-ink: #c2d0fb;
+    --ok: #5cb87d;
+    --ok-soft: #1c3527;
+    --fail: #e2695f;
+    --fail-soft: #3a2323;
+  }
 }
 
 body {
   margin: 0;
-  background: #f8f8f7;
-  color: #1c1b1f;
+  background: var(--bg);
+  color: var(--ink);
   font-family: var(--font-sans);
 }
 
