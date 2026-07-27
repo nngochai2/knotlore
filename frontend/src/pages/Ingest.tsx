@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/http";
 import { createInstance, listInstances, type Instance } from "@/api/instances";
-import { cancelJob, createJob, getJob, listJobs, type DocOutcome, type Job } from "@/api/jobs";
+import { cancelJob, createJob, getJob, type DocOutcome, type Job } from "@/api/jobs";
 import { listConfigs } from "@/api/configs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,16 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useConfirm } from "@/components/confirm-dialog";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-
-// Only "graph" (neo4j) is wired to a real sink adapter today
-// (app/pipeline/registry.py's SINKS) — a "vector" card with nothing behind
-// it would just be a dishonest control, so it's left out entirely until
-// the vector-sink ticket registers "chroma" there.
-const SOURCE_TYPES: { value: string; label: string }[] = [
-  { value: "obsidian", label: "Obsidian vault" },
-  { value: "docx", label: "Documents folder" },
-];
-const SINK_OPTIONS: { value: string; label: string }[] = [{ value: "neo4j", label: "Knowledge graph (Neo4j)" }];
+import { configTitle, SINK_OPTIONS, sinkLabel, SOURCE_TYPES, sourceLabel } from "@/lib/registry";
 
 const STEPS = ["Source", "Destination", "Path & config", "Review & run"] as const;
 const NEW_INSTANCE = "__new__";
@@ -77,10 +68,15 @@ export function Ingest() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
 
+  // "Run again" from an instance's detail page (ADR-0026) links here with
+  // ?instance_id= — everything else about that instance (source/path/sinks,
+  // its last config) comes from the same existing-instance pre-fill below,
+  // not duplicated into its own set of query params.
+  const prefilledInstanceId = searchParams.get("instance_id");
   const [wizardStep, setWizardStep] = React.useState(1);
-  const [mode, setMode] = React.useState<"existing" | "new">("new");
+  const [mode, setMode] = React.useState<"existing" | "new">(prefilledInstanceId ? "existing" : "new");
   const isExisting = mode === "existing";
-  const [selectedInstanceId, setSelectedInstanceId] = React.useState<string>("");
+  const [selectedInstanceId, setSelectedInstanceId] = React.useState<string>(prefilledInstanceId ?? "");
   const [draft, setDraft] = React.useState<Draft>({
     name: "",
     sourceType: searchParams.get("source_type") ?? "",
@@ -111,14 +107,8 @@ export function Ingest() {
   // An existing instance's source/path/sinks (its identity, ADR-0025) are
   // locked once chosen; its config is deliberately left editable — ADR-0025
   // keeps config out of instance identity precisely so a re-run can use a
-  // different one, and the Instance itself carries no config_id at all
-  // (only a run of it does).
-  const lastJobQuery = useQuery({
-    queryKey: ["jobs", "lastForInstance", selectedInstanceId],
-    queryFn: () => listJobs({ instanceId: selectedInstanceId, limit: 1 }),
-    enabled: isExisting && !!selectedInstanceId,
-  });
-
+  // different one. `last_config_id` (the instance's most recent job's
+  // config) just seeds the field with that value, same as source/path/sinks.
   React.useEffect(() => {
     if (!isExisting || !selectedInstance) return;
     setDraft((prev) => ({
@@ -127,12 +117,8 @@ export function Ingest() {
       sourcePath: selectedInstance.source_path,
       sinks: selectedInstance.sinks,
     }));
+    setConfigId(selectedInstance.last_config_id ?? "");
   }, [isExisting, selectedInstance]);
-
-  React.useEffect(() => {
-    const lastJob = lastJobQuery.data?.jobs[0];
-    if (isExisting && lastJob) setConfigId(lastJob.config_id);
-  }, [isExisting, lastJobQuery.data]);
 
   const jobQuery = useQuery({
     queryKey: ["job", jobId],
@@ -220,9 +206,6 @@ export function Ingest() {
     if (confirmed) cancelMutation.mutate();
   };
 
-  const sourceLabel = SOURCE_TYPES.find((s) => s.value === draft.sourceType)?.label ?? "—";
-  const sinkLabel = draft.sinks.map((s) => SINK_OPTIONS.find((o) => o.value === s)?.label ?? s).join(", ") || "—";
-  const configTitle = availableConfigs.find((c) => c.id === configId)?.title ?? configId ?? "—";
   const instanceChipLabel = isExisting ? selectedInstance?.name ?? "…" : "New instance";
 
   return (
@@ -363,10 +346,10 @@ export function Ingest() {
                 <h2 className="mb-4 text-base font-semibold">Step 4 — Review & run</h2>
                 {[
                   ["Instance", instanceChipLabel],
-                  ["Source", sourceLabel],
-                  ["Destination", sinkLabel],
+                  ["Source", sourceLabel(draft.sourceType)],
+                  ["Destination", sinkLabel(draft.sinks)],
                   ["Path", draft.sourcePath || "—"],
-                  ["Config", configTitle],
+                  ["Config", configTitle(availableConfigs, configId)],
                 ].map(([label, value]) => (
                   <div key={label} className="flex justify-between border-b border-[var(--border)] py-2 text-sm">
                     <span className="text-[var(--ink-faint)]">{label}</span>

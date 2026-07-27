@@ -56,6 +56,7 @@ class InstanceOut(BaseModel):
     job_count: int
     last_status: str | None
     last_run_at: str | None
+    last_config_id: str | None
 
 
 class InstanceListResponse(BaseModel):
@@ -78,6 +79,7 @@ def _to_instance_out(row: InstanceRow) -> InstanceOut:
         job_count=row.job_count,
         last_status=row.last_status,
         last_run_at=row.last_run_at,
+        last_config_id=row.last_config_id,
     )
 
 

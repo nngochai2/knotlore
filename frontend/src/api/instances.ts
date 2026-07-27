@@ -1,5 +1,6 @@
 /** Instances API (spec §8, ADR-0025/0026). */
 import { request } from "@/api/http";
+import type { JobStatus } from "@/api/jobs";
 
 export interface Instance {
   id: string;
@@ -10,8 +11,9 @@ export interface Instance {
   created_at: string;
   updated_at: string;
   job_count: number;
-  last_status: string | null;
+  last_status: JobStatus | null;
   last_run_at: string | null;
+  last_config_id: string | null;
 }
 
 export interface CreateInstanceRequest {

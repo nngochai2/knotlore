@@ -27,6 +27,7 @@ def test_create_instance_then_get_round_trips(conn: sqlite3.Connection):
     assert row.job_count == 0
     assert row.last_status is None
     assert row.last_run_at is None
+    assert row.last_config_id is None
 
 
 def test_get_instance_returns_none_for_unknown_id(conn: sqlite3.Connection):
@@ -134,3 +135,19 @@ def test_list_instances_reports_job_count_and_last_status(conn: sqlite3.Connecti
     assert row.job_count == 2
     assert row.last_status == "completed"
     assert row.last_run_at == "2026-07-02T00:00:00"
+
+
+def test_list_instances_reports_config_id_of_the_most_recent_job(conn: sqlite3.Connection):
+    # "Config in use" (spec §9) is per-run, not per-instance (ADR-0025 keeps
+    # config out of instance identity), so it must track whichever job ran
+    # last -- even when an older job used a different config.
+    instances = InstanceStore(conn)
+    jobs = JobStore(conn)
+    instances.create_instance("i1", "A", "docx", "/a", ["neo4j"], "t0")
+    jobs.create_job("job1", "i1", "docx", "/a", ["neo4j"], "old-config.yml", "2026-07-01T00:00:00")
+    jobs.create_job("job2", "i1", "docx", "/a", ["neo4j"], "new-config.yml", "2026-07-02T00:00:00")
+
+    row = instances.get_instance("i1")
+
+    assert row is not None
+    assert row.last_config_id == "new-config.yml"
