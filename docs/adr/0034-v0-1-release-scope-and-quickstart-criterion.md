@@ -22,4 +22,4 @@ An open-source visitor gives up within minutes if setup needs Python, Docker, tw
 ## Consequences
 - The two-Neo4j setup (doc graph + code graph) collapses to one (ADR-0029).
 - The sample project is synthetic, contains no employer data (ADR-0027), and doubles as an end-to-end test fixture.
-- Fixing NAA issue #43 is required only if Oracle ships in v0.1. Since Oracle is an "example" plugin, it may ship marked unsafe-to-expose or be left out.
+- The Oracle plugin's SQL-injection blocker (NAA #43) is already fixed (NAA #44), so it can ship in v0.1 as an "example" plugin.

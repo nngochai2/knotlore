@@ -14,7 +14,7 @@ A solo maintainer (ADR-0027) can't keep seven integrations working against seven
 - **Support tiers**, shown in the manifest and the UI:
   - **core**: the knowledge MCP (ships in the quickstart).
   - **maintained**: Jira and Git plugins, matching what the design-partner team uses.
-  - **example**: Azure DevOps, Jenkins, Oracle. They ship as reference implementations, aren't in the quickstart, and fixes are best-effort. Oracle stays "example" at least until NAA issue #43 (SQL injection / unenforced `ALLOWED_SCHEMAS`) is fixed.
+  - **example**: Azure DevOps, Jenkins, Oracle. They ship as reference implementations, aren't in the quickstart, and fixes are best-effort. Oracle's known SQL injection (NAA #43) was fixed in NAA #44 before this decision; it stays "example" only for lack of a dependent user.
 - **Ingestion plugins are not formalised in v1.** New sources go through Loom's internal `SourceAdapter` protocol until it has stabilised across the git and tracker adapters (ADR-0030).
 
 ## Consequences
