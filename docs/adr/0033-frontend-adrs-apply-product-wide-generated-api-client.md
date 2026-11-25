@@ -1,4 +1,4 @@
-# 0029 — Frontend: ADRs 0013–0017 apply product-wide, plus an OpenAPI-generated API client
+# 0033 — Frontend: ADRs 0013–0017 apply product-wide, plus an OpenAPI-generated API client
 
 ## Status
 Accepted (2026-11-25). Extends ADR-0013 to 0017.

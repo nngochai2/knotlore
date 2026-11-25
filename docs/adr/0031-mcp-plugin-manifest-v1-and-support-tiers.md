@@ -1,4 +1,4 @@
-# 0027 — MCP plugin manifest v1, Streamable HTTP, and support tiers
+# 0031 — MCP plugin manifest v1, Streamable HTTP, and support tiers
 
 ## Status
 Accepted (2026-11-25)

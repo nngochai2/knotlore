@@ -1,4 +1,4 @@
-# 0028 — Deployment: shared server on a trusted network, no auth, localhost by default
+# 0032 — Deployment: shared server on a trusted network, no auth, localhost by default
 
 ## Status
 Accepted (2026-11-25)

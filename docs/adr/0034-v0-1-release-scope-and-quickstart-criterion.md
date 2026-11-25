@@ -1,4 +1,4 @@
-# 0030 — v0.1 release scope and the 5-minute quickstart criterion
+# 0034 — v0.1 release scope and the 5-minute quickstart criterion
 
 ## Status
 Accepted (2026-11-25)

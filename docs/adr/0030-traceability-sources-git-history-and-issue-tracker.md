@@ -1,4 +1,4 @@
-# 0026 — Traceability sources: git history and issue tracker as read-only source adapters
+# 0030 — Traceability sources: git history and issue tracker as read-only source adapters
 
 ## Status
 Accepted (2026-11-25). Requires a `kg-schema` version bump. Revisits the entity-type scope of ADR-0003.

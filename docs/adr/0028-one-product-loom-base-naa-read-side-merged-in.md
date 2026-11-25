@@ -1,4 +1,4 @@
-# 0024 — One product, one repo: Loom is the base, NAA's read side moves in
+# 0028 — One product, one repo: Loom is the base, NAA's read side moves in
 
 ## Status
 Accepted (2026-11-25). Narrows `loom-spec.md` §1 and the §2 non-goal "MCP server hosting, configuration, or management of any kind".

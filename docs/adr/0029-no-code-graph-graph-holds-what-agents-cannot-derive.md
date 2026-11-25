@@ -1,4 +1,4 @@
-# 0025 — No code graph: the graph holds only what agents can't derive from the repo
+# 0029 — No code graph: the graph holds only what agents can't derive from the repo
 
 ## Status
 Accepted (2026-11-25)

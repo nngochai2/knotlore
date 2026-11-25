@@ -1,4 +1,4 @@
-# 0023 — Product positioning: Knotlore, the requirements and history your code doesn't contain
+# 0027 — Product positioning: Knotlore, the requirements and history your code doesn't contain
 
 ## Status
 Accepted (2026-11-25)
