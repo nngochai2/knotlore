@@ -109,8 +109,17 @@ export function Ingest() {
   // keeps config out of instance identity precisely so a re-run can use a
   // different one. `last_config_id` (the instance's most recent job's
   // config) just seeds the field with that value, same as source/path/sinks.
+  // Seeding happens once per selection, not on every refetch of the
+  // instances list: a run elsewhere changes that instance's last_* fields,
+  // and re-seeding then would silently discard a config the user just picked.
+  const seededInstanceId = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!isExisting || !selectedInstance) return;
+    if (!isExisting) {
+      seededInstanceId.current = null;
+      return;
+    }
+    if (!selectedInstance || seededInstanceId.current === selectedInstance.id) return;
+    seededInstanceId.current = selectedInstance.id;
     setDraft((prev) => ({
       ...prev,
       sourceType: selectedInstance.source_type,

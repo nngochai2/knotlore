@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listInstances } from "@/api/instances";
 import { listConfigs } from "@/api/configs";
@@ -6,7 +6,6 @@ import { configTitle, sinkLabel, sourceLabel } from "@/lib/registry";
 import { StatusBadge } from "@/components/status-badge";
 
 export function Instances() {
-  const navigate = useNavigate();
   const instancesQuery = useQuery({ queryKey: ["instances"], queryFn: listInstances });
   const configsQuery = useQuery({ queryKey: ["configs"], queryFn: listConfigs });
 
@@ -20,18 +19,24 @@ export function Instances() {
       </div>
 
       <div className="flex flex-col gap-2.5">
+        {instancesQuery.isPending && <p className="text-sm text-[var(--ink-faint)]">Loading instances…</p>}
+        {instancesQuery.isError && (
+          <p className="text-sm text-[var(--fail)]">
+            Couldn't load instances.{" "}
+            <button type="button" className="cursor-pointer underline" onClick={() => instancesQuery.refetch()}>
+              Retry
+            </button>
+          </p>
+        )}
         {instances.length === 0 && instancesQuery.isSuccess && (
           <p className="text-sm text-[var(--ink-faint)]">
             No instances yet — start one from the Ingest page.
           </p>
         )}
         {instances.map((instance) => (
-          <div
+          <Link
             key={instance.id}
-            role="link"
-            tabIndex={0}
-            onClick={() => navigate(`/instances/${instance.id}`)}
-            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && navigate(`/instances/${instance.id}`)}
+            to={`/instances/${instance.id}`}
             className="grid cursor-pointer grid-cols-[1.4fr_1fr_1fr_1fr_auto] items-center gap-3.5 rounded-lg border border-[var(--border)] px-4.5 py-3.5 transition-colors hover:border-[var(--accent)]"
           >
             <div className="text-sm font-bold">{instance.name}</div>
@@ -53,7 +58,7 @@ export function Instances() {
               <br />
               {instance.last_run_at ? new Date(instance.last_run_at).toLocaleString() : "—"}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </div>

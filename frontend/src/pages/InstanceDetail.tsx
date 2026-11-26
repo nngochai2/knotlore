@@ -1,6 +1,7 @@
 import * as React from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiError } from "@/api/http";
 import { deleteInstance, getInstance, renameInstance } from "@/api/instances";
 import { listJobs, type Job } from "@/api/jobs";
 import { listConfigs } from "@/api/configs";
@@ -34,7 +35,12 @@ export function InstanceDetail() {
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState("");
 
-  const instanceQuery = useQuery({ queryKey: ["instance", instanceId], queryFn: () => getInstance(instanceId) });
+  const instanceQuery = useQuery({
+    queryKey: ["instance", instanceId],
+    queryFn: () => getInstance(instanceId),
+    // A 404 won't fix itself — show "doesn't exist" now instead of after retries.
+    retry: (failureCount, error) => !(error instanceof ApiError && error.status === 404) && failureCount < 3,
+  });
   const jobsQuery = useQuery({
     queryKey: ["jobs", "forInstance", instanceId],
     queryFn: () => listJobs({ instanceId, limit: JOB_HISTORY_LIMIT }),
@@ -74,17 +80,36 @@ export function InstanceDetail() {
     if (confirmed) deleteMutation.mutate();
   };
 
-  if (!instance) return null;
+  const submitRename = () => {
+    const name = renameValue.trim();
+    if (name !== "" && !renameMutation.isPending) renameMutation.mutate(name);
+  };
+
+  if (instanceQuery.isPending) return <p className="text-sm text-[var(--ink-faint)]">Loading instance…</p>;
+  if (!instance) {
+    const notFound = instanceQuery.error instanceof ApiError && instanceQuery.error.status === 404;
+    return (
+      <div className="pb-10">
+        <Link to="/instances" className="mb-3.5 inline-block text-[12.5px] text-[var(--accent)]">
+          ← All instances
+        </Link>
+        <p className="text-sm text-[var(--ink-muted)]">
+          {notFound ? "This instance doesn't exist — it may have been deleted." : "Couldn't load this instance."}
+        </p>
+        {!notFound && (
+          <Button variant="outline" className="mt-3" onClick={() => instanceQuery.refetch()}>
+            Retry
+          </Button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="pb-10">
-      <button
-        type="button"
-        onClick={() => navigate("/instances")}
-        className="mb-3.5 inline-block cursor-pointer text-[12.5px] text-[var(--accent)]"
-      >
+      <Link to="/instances" className="mb-3.5 inline-block text-[12.5px] text-[var(--accent)]">
         ← All instances
-      </button>
+      </Link>
 
       <div className="mb-4 flex items-start justify-between">
         <div>
@@ -144,6 +169,9 @@ export function InstanceDetail() {
             ))}
           </tbody>
         </table>
+        {jobsQuery.isError && (
+          <p className="mt-3 text-sm text-[var(--fail)]">Couldn't load this instance's job history.</p>
+        )}
         {jobsQuery.data?.jobs.length === 0 && (
           <p className="mt-3 text-sm text-[var(--ink-faint)]">No runs yet.</p>
         )}
@@ -159,13 +187,22 @@ export function InstanceDetail() {
           <DialogHeader>
             <DialogTitle>Rename instance</DialogTitle>
           </DialogHeader>
-          <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+          <form
+            id="rename-instance"
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitRename();
+            }}
+          >
+            <Input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+          </form>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenameOpen(false)}>
               Cancel
             </Button>
             <Button
-              onClick={() => renameMutation.mutate(renameValue)}
+              type="submit"
+              form="rename-instance"
               disabled={renameValue.trim() === "" || renameMutation.isPending}
             >
               Save
