@@ -48,3 +48,15 @@ A version marker for a prose-extraction block's prompt template, tracked per doc
 
 ## Instance
 A named, saved recipe of **source type + source path + sink(s)** — not the rule config, which stays mutable across its history — that owns a history of job runs against it. The unit shown on the Instances page. Purely a catalog/bookkeeping concept layered over the one shared Neo4j (and future shared Chroma): deleting an instance removes its bookkeeping only, never the graph/vector data its runs wrote (no cascade delete — that data is untagged and just sits there, similar to how orphaned content already works). Not to be confused with spec §2's unrelated use of "instance" to mean the shared Neo4j/Ollama deployment itself ("a single shared instance"). See ADR-0025, ADR-0026.
+
+## Work item
+An Azure DevOps Server work item, imported **read-only** as a graph node by the Azure DevOps source adapter. It holds title, state, type, iteration/area, estimate, description and acceptance criteria. It's Knotlore's generic "issue": the tracker entity a requirement, a [[commit]] or a [[source file]] links to. Write actions (creating or updating items) belong to the optional Azure DevOps MCP plugin, not to ingestion. See ADR-0030, ADR-0035.
+
+## Commit
+One version-control change: a git commit or a **TFVC changeset**. Both are the same entity type, distinguished by `vcs: git | tfvc` and their native id (SHA or changeset number). It's a link target only: it says which [[work item]]s it belongs to and which [[source file]]s it changed. Code structure is never stored (ADR-0029). See ADR-0035.
+
+## Source file
+A file path that traceability links point at. Its identity is **code root + normalised repo-relative path**. The source config's prefix mappings fold TFVC server paths (`$/Project/Main/src/Foo.cs`), diff paths (`a/src/Foo.cs`) and checkout paths (`src/Foo.cs`) into one node, keeping the raw paths as properties. That way "which requirements touch this file?" works from the path an agent has open. See ADR-0035.
+
+## Link provenance
+Where a traceability link came from, recorded on the edge: `via: changeset <n>`, `via: attachment <file>.diff`, or the text field a requirement ID was matched in. When a changeset and an attached diff both link a [[work item]] to files, both links are kept and MCP tools show each one's provenance. See ADR-0035.
