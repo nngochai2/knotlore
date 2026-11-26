@@ -59,6 +59,12 @@ _REL_TYPE_RE = re.compile(r"[^A-Z_]")
 _ALL_ENTITY_LABELS = ":".join(_LABEL_RE.sub("_", t) for t in _kg_schema.ENTITY_TYPES)
 
 
+# Shared entity types (ADR-0036): nodes owned by no document. Sanitized the
+# same way as every other label, once.
+_SHARED_ENTITY_TYPES = frozenset(_kg_schema.SHARED_ENTITY_TYPES)
+_SHARED_ENTITY_LABELS = tuple(_LABEL_RE.sub("_", t) for t in _kg_schema.SHARED_ENTITY_TYPES)
+
+
 def _sanitize_label(label: str) -> str:
     return _LABEL_RE.sub("_", label)
 
@@ -68,13 +74,20 @@ def _sanitize_rel_type(rel_type: str) -> str:
 
 
 def _entity_row(entity: Entity, result: ExtractionResult, now: str) -> dict[str, object]:
+    # A shared node (ADR-0036) is linked to by many documents and owned by
+    # none. Stamping the current writer as its source_doc would let that
+    # document's next cleanup DETACH DELETE it, taking every *other*
+    # document's edges into it along with it. Neo4j's `SET n.x = null`
+    # removes the property, so this also strips an owner a pre-1.2.0 write
+    # may have left behind.
+    shared = entity.type in _SHARED_ENTITY_TYPES
     return {
         "id": entity.id,
         "name": entity.name,
         "origin": entity.origin,
         "rule_id": entity.rule_id,
-        "source_doc": result.doc_id,
-        "content_hash": result.content_hash,
+        "source_doc": None if shared else result.doc_id,
+        "content_hash": None if shared else result.content_hash,
         "schema_version": _kg_schema.SCHEMA_VERSION,
         "now": now,
         "properties": dict(entity.properties),
@@ -282,6 +295,24 @@ class Neo4jSink:
                 doc_id=doc_id,
             ).single()
 
+            # Shared nodes are never matched by the source_doc-keyed delete
+            # above (they carry no source_doc), so they'd otherwise live
+            # forever. Once this doc's edges are gone, any shared node with
+            # no relationships left at all is unreachable -- delete it. A
+            # plain DELETE (not DETACH) is deliberate: it can only succeed
+            # on a node with zero relationships, curated ones included.
+            gc_count = 0
+            for label in _SHARED_ENTITY_LABELS:
+                gc_result = session.run(
+                    f"MATCH (n:{label}) "
+                    "WHERE NOT EXISTS { MATCH (n)--() } "
+                    "DELETE n "
+                    "RETURN count(n) AS c"
+                ).single()
+                gc_count += int(gc_result["c"]) if gc_result else 0
+
         rel_count = rel_result["c"] if rel_result else 0
         node_count = node_result["c"] if node_result else 0
-        return DeleteReport(deleted_count=int(rel_count) + int(node_count), orphans=orphans)
+        return DeleteReport(
+            deleted_count=int(rel_count) + int(node_count) + gc_count, orphans=orphans
+        )

@@ -6,8 +6,12 @@
     "BUSINESS_TERM",
     "NOTE",
     "TAG",
-    "REQUIREMENT"
+    "REQUIREMENT",
+    "ISSUE",
+    "COMMIT",
+    "SOURCE_FILE"
   ],
+  "shared_entity_types": ["SOURCE_FILE"],
   "relationship_types": [
     "DEPENDS_ON",
     "EXTENDS",
@@ -21,7 +25,9 @@
     "FOLLOWS",
     "VIOLATES",
     "LINKS_TO",
-    "TAGGED_WITH"
+    "TAGGED_WITH",
+    "REFERENCES",
+    "CHANGES"
   ],
   "default_relationship_type": "LINKS_TO",
   "mandatory_properties": [
@@ -34,13 +40,15 @@
       "name": "source_doc",
       "type": "string",
       "description": "doc_id of originating document",
-      "absent_for_origins": ["curated"]
+      "absent_for_origins": ["curated"],
+      "absent_for_shared_entity_types": true
     },
     {
       "name": "content_hash",
       "type": "string",
       "description": "hash of source doc at write time",
-      "absent_for_origins": ["curated"]
+      "absent_for_origins": ["curated"],
+      "absent_for_shared_entity_types": true
     },
     {
       "name": "rule_id",
