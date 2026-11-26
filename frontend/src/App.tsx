@@ -7,6 +7,7 @@ import { Ingest } from "@/pages/Ingest";
 import { Rules } from "@/pages/Rules";
 import { Graph } from "@/pages/Graph";
 import { Instances } from "@/pages/Instances";
+import { InstanceDetail } from "@/pages/InstanceDetail";
 
 // One shared QueryClientProvider at the app root (ADR-0015) — every page's
 // server state, including job-status polling, goes through this client.
@@ -26,6 +27,7 @@ function App() {
               <Route path="/rules" element={<Rules />} />
               <Route path="/graph" element={<Graph />} />
               <Route path="/instances" element={<Instances />} />
+              <Route path="/instances/:id" element={<InstanceDetail />} />
             </Routes>
           </main>
         </BrowserRouter>

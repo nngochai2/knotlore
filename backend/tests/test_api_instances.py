@@ -133,6 +133,23 @@ def test_get_instance_reports_zero_jobs_for_a_freshly_created_instance():
     assert body["job_count"] == 0
     assert body["last_status"] is None
     assert body["last_run_at"] is None
+    assert body["last_config_id"] is None
+
+
+def test_get_instance_reports_config_id_of_its_most_recent_job():
+    with _client() as client:
+        instance_id = client.post(
+            "/instances",
+            json={"name": "A", "source_type": "fake", "source_path": "/a", "sinks": ["dryrun"]},
+        ).json()["instance_id"]
+        job_id = client.post(
+            "/jobs", json={"instance_id": instance_id, "config_id": "cfg.yml"}
+        ).json()["job_id"]
+        _poll_until_terminal(client, job_id)
+
+        resp = client.get(f"/instances/{instance_id}")
+
+    assert resp.json()["last_config_id"] == "cfg.yml"
 
 
 def test_patch_instance_renames():

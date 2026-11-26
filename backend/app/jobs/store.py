@@ -196,17 +196,23 @@ class InstanceRow:
     job_count: int
     last_status: JobStatusValue | None
     last_run_at: str | None
+    last_config_id: str | None
 
 
 # Shared by `get_instance`/`list_instances`: each instance's job count and
-# its most recent job's status/timestamp, computed the same way in both so
-# a row read singly and a row read as part of a list never disagree.
+# its most recent job's status/timestamp/config, computed the same way in
+# both so a row read singly and a row read as part of a list never disagree.
+# `last_config_id` is "config in use" (spec §9's Instances list column) —
+# config is deliberately not part of instance identity (ADR-0025), so this
+# is the only place an instance's current config comes from.
 _INSTANCE_JOB_SUMMARY_COLUMNS = """
     (SELECT COUNT(*) FROM jobs j WHERE j.instance_id = i.id) AS job_count,
     (SELECT j.status FROM jobs j WHERE j.instance_id = i.id
      ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS last_status,
     (SELECT j.created_at FROM jobs j WHERE j.instance_id = i.id
-     ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS last_run_at
+     ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS last_run_at,
+    (SELECT j.config_id FROM jobs j WHERE j.instance_id = i.id
+     ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS last_config_id
 """
 
 
@@ -300,6 +306,7 @@ class InstanceStore:
             job_count,
             last_status,
             last_run_at,
+            last_config_id,
         ) = row
         assert isinstance(instance_id, str)
         assert isinstance(name, str)
@@ -311,6 +318,7 @@ class InstanceStore:
         assert isinstance(job_count, int)
         assert last_status is None or isinstance(last_status, str)
         assert last_run_at is None or isinstance(last_run_at, str)
+        assert last_config_id is None or isinstance(last_config_id, str)
         return InstanceRow(
             id=instance_id,
             name=name,
@@ -322,6 +330,7 @@ class InstanceStore:
             job_count=job_count,
             last_status=last_status,  # type: ignore[arg-type]
             last_run_at=last_run_at,
+            last_config_id=last_config_id,
         )
 
 
