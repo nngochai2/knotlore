@@ -176,3 +176,28 @@ def test_a_failed_discovery_fails_the_run_before_anything_is_removed(project: Pa
 
     assert graph.nodes == nodes
     assert graph.rels == rels
+
+
+def test_changesets_wait_for_a_failed_work_item_so_their_references_survive_its_retry(project: Path) -> None:
+    graph, store = OwnershipGraph(), HashStore(connect(":memory:"))
+    run(f"fixture:{project}", graph, store)
+    issue_102 = issue_node_id(PROJECT, 102)
+
+    # Work item 102 changes, but its patch can't be downloaded this run.
+    patch = project / "attachments" / "0a1b2c3d-0000-4000-8000-000000000201"
+    saved = patch.read_bytes()
+    patch.unlink()
+    bump(project, 102, 9)
+    failing = run(f"fixture:{project}", graph, store)
+
+    outcomes = {s.doc_id.rsplit(":", 2)[-2] + s.doc_id.rsplit(":", 1)[-1]: s.outcome for s in failing.doc_statuses}
+    # Its changesets are held back too, so they re-ingest with it later.
+    assert outcomes["wi102"] == "failed"
+    assert outcomes["cs2001"] == "failed"
+    assert outcomes["cs2002"] == "failed"
+
+    patch.write_bytes(saved)
+    retried = run(f"fixture:{project}", graph, store)
+
+    assert {s.outcome for s in retried.doc_statuses if s.doc_id.endswith((":wi:102", ":cs:2001", ":cs:2002"))} == {"updated"}
+    assert len(graph.rel_types_into(issue_102, "REFERENCES")) == 2

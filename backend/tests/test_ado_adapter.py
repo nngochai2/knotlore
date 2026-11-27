@@ -382,3 +382,64 @@ def test_username_and_password_default_to_ntlm(monkeypatch: pytest.MonkeyPatch) 
     live_adapter(httpx.MockTransport(handle), auth=auth).discover(LIVE)
 
     assert legs == ["anonymous", "negotiate", "authenticate"]
+
+
+# ── review follow-ups ────────────────────────────────────────────────────
+
+
+def test_a_work_item_the_query_returned_but_the_fetch_did_not_fails_discover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Treating it as absent would clean it up as removed (ADR-0037).
+    monkeypatch.setenv("ADO_PAT", "x")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/wiql"):
+            return httpx.Response(200, json={"workItems": [{"id": 1}, {"id": 2}]})
+        return httpx.Response(200, json={"value": [{"id": 1, "rev": 1, "fields": {}}]})
+
+    with pytest.raises(AzureDevOpsError, match="2"):
+        live_adapter(httpx.MockTransport(handle), auth={"pat_env": "ADO_PAT"}).discover(LIVE)
+
+
+def test_a_query_at_the_wiql_cap_fails_instead_of_dropping_work_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ADO_PAT", "x")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"workItems": [{"id": i} for i in range(1, 20001)]})
+
+    with pytest.raises(AzureDevOpsError, match="20,000"):
+        live_adapter(httpx.MockTransport(handle), auth={"pat_env": "ADO_PAT"}).discover(LIVE)
+
+
+def test_turning_tls_verification_off_warns_on_every_document() -> None:
+    adapter = make_adapter(verify_tls=False)
+
+    for doc_id in (wi(100), cs(2002)):
+        result = extract(adapter, f"fixture:{FIXTURE}", doc_id)
+        assert result.warning is not None and "TLS verification is off" in result.warning
+
+
+def test_a_delete_in_any_attached_diff_wins_over_an_edit_in_another(project: Path) -> None:
+    item = project / "workitems" / "101.json"
+    item.write_text(
+        item.read_text(encoding="utf-8").replace(
+            '"rel": "Hyperlink"',
+            '"rel": "AttachedFile", "url": "https://ado.example.test/DefaultCollection/_apis/wit/attachments/'
+            '0a1b2c3d-0000-4000-8000-000000000103", "attributes": {"name": "followup.diff", "resourceSize": 50}}, '
+            '{"rel": "Hyperlink"',
+        ),
+        encoding="utf-8",
+    )
+    (project / "attachments" / "0a1b2c3d-0000-4000-8000-000000000103").write_bytes(
+        b"--- a/src/Billing/Invoice.cs\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
+    )
+
+    result = extract(make_adapter(), f"fixture:{project}", wi(101))
+    invoice = files_by_path(result)["src/Billing/Invoice.cs"].id
+    rel = next(r for r in result.relationships if r.to_id == invoice)
+
+    assert rel.properties["change"] == "delete"
+    assert rel.properties["via"] == "attachment fix-101.diff; attachment followup.diff"

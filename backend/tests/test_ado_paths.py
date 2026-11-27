@@ -37,22 +37,29 @@ def test_server_path_under_no_root_is_unmapped() -> None:
 
 
 def test_repo_relative_diff_path_lands_in_the_diff_code_root() -> None:
-    assert ROOTS.resolve_diff_path("src/Invoice.cs") == ResolvedPath(
+    assert ROOTS.resolve_relative_path("src/Invoice.cs") == ResolvedPath(
         root="billing", path="src/Invoice.cs"
     )
-    assert ROOTS.resolve_diff_path("./src/Invoice.cs") == ResolvedPath(
+    assert ROOTS.resolve_relative_path("./src/Invoice.cs") == ResolvedPath(
         root="billing", path="src/Invoice.cs"
     )
 
 
 def test_server_path_inside_a_tf_style_diff_resolves_like_a_changeset_path() -> None:
-    assert ROOTS.resolve_diff_path("$/Proj/Dev/src/Invoice.cs") == ResolvedPath(
+    assert ROOTS.resolve_relative_path("$/Proj/Dev/src/Invoice.cs") == ResolvedPath(
         root="billing", path="src/Invoice.cs"
     )
-    assert ROOTS.resolve_diff_path("$/Other/x.cs") is None
+    assert ROOTS.resolve_relative_path("$/Other/x.cs") is None
 
 
 def test_diff_paths_are_unmapped_when_no_diff_code_root_is_configured() -> None:
     roots = CodeRoots([CodeRoot(name="billing", prefixes=("$/Proj/Main/",))], diff_code_root=None)
 
-    assert roots.resolve_diff_path("src/Invoice.cs") is None
+    assert roots.resolve_relative_path("src/Invoice.cs") is None
+
+
+def test_a_repo_relative_checkout_path_resolves_like_a_diff_path() -> None:
+    # A path as an agent sees it in its checkout, Windows separators included.
+    checkout = ROOTS.resolve_relative_path(r"src\Invoice.cs")
+
+    assert checkout == ROOTS.resolve_server_path("$/Proj/Main/src/Invoice.cs")

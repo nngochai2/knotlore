@@ -32,7 +32,8 @@ _kg_schema = importlib.import_module("kg-schema")
 ROW_MATCH_RULE_ID = "id-pattern-match"
 
 
-def _parse_flags(flags: str) -> int:
+def parse_flags(flags: str) -> int:
+    """Rule-file regex flags (`"IGNORECASE|MULTILINE"`) as `re` flags."""
     result = 0
     for token in flags.upper().split("|"):
         token = token.strip()
@@ -43,11 +44,6 @@ def _parse_flags(flags: str) -> int:
         elif token == "DOTALL":
             result |= re.DOTALL
     return result
-
-
-def parse_flags(flags: str) -> int:
-    """Rule-file regex flags (`"IGNORECASE|MULTILINE"`) as `re` flags."""
-    return _parse_flags(flags)
 
 
 def format_requirement_id(match: re.Match[str], id_format: str) -> str:
@@ -81,12 +77,12 @@ class RuleEngine:
             )
 
         self._rule_file = rule_file
-        self._id_re = re.compile(rule_file.id_pattern, _parse_flags(rule_file.id_flags))
+        self._id_re = re.compile(rule_file.id_pattern, parse_flags(rule_file.id_flags))
         self._category_signals: list[tuple[re.Pattern[str], str]] = [
-            (re.compile(s.pattern, _parse_flags(s.flags)), s.name) for s in rule_file.category_signals
+            (re.compile(s.pattern, parse_flags(s.flags)), s.name) for s in rule_file.category_signals
         ]
         self._named_extractions = [
-            (re.compile(e.pattern, _parse_flags(e.flags)), e) for e in rule_file.named_extractions
+            (re.compile(e.pattern, parse_flags(e.flags)), e) for e in rule_file.named_extractions
         ]
 
     def row_matches_id(self, first_cell: str) -> bool:

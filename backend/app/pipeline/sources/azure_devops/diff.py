@@ -17,7 +17,18 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-ChangeKind = Literal["add", "edit", "delete"]
+from app.pipeline.sources.azure_devops.paths import to_posix
+
+# How a change touched a file. Diffs yield add/edit/delete; TFVC changesets
+# can also report a rename. When several sources name one file, the
+# strongest kind wins (see `strongest`).
+ChangeKind = Literal["add", "edit", "delete", "rename"]
+_STRENGTH: dict[ChangeKind, int] = {"edit": 0, "rename": 1, "add": 2, "delete": 3}
+
+
+def strongest(a: ChangeKind, b: ChangeKind) -> ChangeKind:
+    return a if _STRENGTH[a] >= _STRENGTH[b] else b
+
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
 _DEV_NULL = "/dev/null"
@@ -33,7 +44,7 @@ def _header_path(raw: str) -> str:
     # Drop a tab-separated timestamp, then a TFVC `;C123` version suffix.
     path = raw.split("\t", 1)[0].strip()
     path = re.sub(r";C\d+$", "", path)
-    path = path.replace("\\", "/")
+    path = to_posix(path)
     if path.startswith(("a/", "b/")):
         path = path[2:]
     return path

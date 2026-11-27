@@ -111,14 +111,20 @@ def test_generate_uses_singleton_client_when_none_passed(monkeypatch, ollama_env
     assert ollama_client.generate("say hi") == "ok"
 
 
+# The read-only Azure DevOps client and its fixture transport (ADR-0035)
+# talk to a tracker, never to an LLM, and send no document content.
+_TRACKER_HTTP_MODULES = {
+    "pipeline/sources/azure_devops/client.py",
+    "pipeline/sources/azure_devops/fixtures.py",
+}
+
+
 def _modules_importing_httpx() -> list[Path]:
     offenders = []
     for path in APP_ROOT.rglob("*.py"):
         if path == APP_ROOT / "llm" / "ollama_client.py":
             continue
-        if APP_ROOT / "pipeline" / "sources" / "azure_devops" in path.parents:
-            # The read-only tracker client (ADR-0035) talks to an Azure
-            # DevOps Server, never to an LLM; it sends no document content.
+        if path.relative_to(APP_ROOT).as_posix() in _TRACKER_HTTP_MODULES:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
@@ -137,6 +143,6 @@ def test_no_module_outside_ollama_client_imports_httpx():
     offenders = _modules_importing_httpx()
     assert offenders == [], (
         f"Only llm/ollama_client.py may import httpx to reach an LLM (ADR-0019), and only "
-        f"pipeline/sources/azure_devops/ to read the tracker (ADR-0035); "
+        f"the Azure DevOps client/fixture transport to read the tracker (ADR-0035); "
         f"found imports in: {offenders}"
     )

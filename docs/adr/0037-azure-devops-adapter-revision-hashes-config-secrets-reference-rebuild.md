@@ -33,8 +33,9 @@ Resolved in a `/grilling` session on 2026-11-27.
 - `attachment_names` and `attachment_md5s`: attachments, as parallel lists, because Neo4j properties can't hold maps. MD5 matches the docx adapter's `content_hash`. An attachment over the size cap records an empty hash.
 
 **Failure semantics.**
-- If `discover()` fails (WIQL, auth or network), the job fails before any removal runs, so an outage never looks like every work item being deleted.
+- If `discover()` fails (WIQL, auth or network), the job fails before any removal runs, so an outage never looks like every work item being deleted. The same goes for a work item the query returned but the server couldn't fetch, and for a query result at the 20,000 cap, which may be truncated.
 - A failed fetch for one document, including an attachment download, marks that document failed. Its hash isn't recorded, so the next run retries it, and its previous graph state is untouched.
+- **The changesets a failed work item links are held back** (marked failed) in the same run. Otherwise they would record their new hash now, and the retry's rebuild of the `ISSUE` node would delete their `REFERENCES` edges for good.
 
 ## Consequences
 - No watermark table; the existing SQLite hash store is enough.

@@ -76,13 +76,15 @@ AZURE_DEVOPS_CONFIG_SCHEMA: dict[str, Any] = {
                 },
             ],
         },
-        "tls": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "ca_bundle": {"type": "string", "minLength": 1},
-                "verify": {"type": "boolean", "default": True},
-            },
+        "ca_bundle": {
+            "description": "Path to a CA bundle for a server with an internal certificate authority.",
+            "type": "string",
+            "minLength": 1,
+        },
+        "verify_tls": {
+            "description": "Verify the server's TLS certificate. false adds a warning to every document.",
+            "type": "boolean",
+            "default": True,
         },
         "fields": {
             "description": "Override the work item field reference names tried for each logical field.",
@@ -186,7 +188,7 @@ class AzureDevOpsConfig:
     diff_globs: tuple[str, ...] = DEFAULT_DIFF_GLOBS
     max_attachment_bytes: int = DEFAULT_MAX_ATTACHMENT_BYTES
 
-    def code_root_map(self) -> CodeRoots:
+    def path_resolver(self) -> CodeRoots:
         return CodeRoots(list(self.code_roots), diff_code_root=self.diff_code_root)
 
 
@@ -204,7 +206,6 @@ def azure_devops_config_from_dict(raw: dict[str, Any]) -> AzureDevOpsConfig:
             password_env=auth_raw["password_env"],
             scheme=auth_raw.get("scheme", "ntlm"),
         )
-    tls = raw.get("tls", {})
     roots = tuple(CodeRoot(name=r["name"], prefixes=tuple(r["prefixes"])) for r in raw["code_roots"])
     fields = dict(DEFAULT_FIELDS)
     fields.update({k: tuple(v) for k, v in raw.get("fields", {}).items()})
@@ -219,8 +220,8 @@ def azure_devops_config_from_dict(raw: dict[str, Any]) -> AzureDevOpsConfig:
         area_paths=tuple(raw.get("area_paths", ())),
         wiql_where=raw.get("wiql_where"),
         auth=auth,
-        ca_bundle=tls.get("ca_bundle"),
-        verify_tls=tls.get("verify", True),
+        ca_bundle=raw.get("ca_bundle"),
+        verify_tls=raw.get("verify_tls", True),
         fields=fields,
         diff_globs=tuple(raw.get("diff_globs", DEFAULT_DIFF_GLOBS)),
         max_attachment_bytes=raw.get("max_attachment_bytes", DEFAULT_MAX_ATTACHMENT_BYTES),

@@ -12,7 +12,11 @@ Ordering and hashing carry the incremental contract (ADR-0037):
   link it, and `discover()` lists every work item before any changeset.
   A changed work item's `ISSUE` node is rebuilt first, and its changesets
   then re-ingest in the same run and rewrite their `REFERENCES` edges
-  into it.
+  into it;
+- if a work item fails this run, the changesets it links are held back
+  (failed too), so they re-ingest together with it when it's retried.
+  Otherwise they would record the new hash now, and the retry's rebuild
+  of the `ISSUE` node would delete their edges for good.
 
 `source_path` is the project URL, or `fixture:<dir>` for the file-serving
 transport (`fixtures.py`). `discover` and `load` do all network reads;
@@ -25,25 +29,36 @@ import fnmatch
 import hashlib
 import html
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-
-import httpx
+from typing import Any, Literal, TypeVar
 
 from app.pipeline.rules.engine import format_requirement_id, parse_flags
-from app.pipeline.sources.azure_devops.client import AzureDevOpsClient
+from app.pipeline.sources.azure_devops.client import AzureDevOpsClient, AzureDevOpsError, Transport
 from app.pipeline.sources.azure_devops.config import AzureDevOpsConfig
-from app.pipeline.sources.azure_devops.diff import parse_diff
+from app.pipeline.sources.azure_devops.diff import ChangeKind, parse_diff, strongest
 from app.pipeline.sources.azure_devops.fixtures import FixtureTransport, fixture_project_url
 from app.pipeline.sources.azure_devops.paths import ResolvedPath
 from app.pipeline.types import Entity, ExtractionResult, LoadedDoc, Relationship, SourceDoc
 
+_T = TypeVar("_T")
+
 FIXTURE_PREFIX = "fixture:"
+TLS_WARNING = "TLS verification is off (verify_tls: false)"
+
+DocKind = Literal["work_item", "changeset"]
+_DOC_ID_SEGMENT: dict[DocKind, str] = {"work_item": "wi", "changeset": "cs"}
+
 _CHANGESET_LINK_RE = re.compile(r"^vstfs:///VersionControl/Changeset/(\d+)$", re.IGNORECASE)
 _WORK_ITEM_URL_RE = re.compile(r"/_apis/wit/workItems/(\d+)$", re.IGNORECASE)
 _BLOCK_TAG_RE = re.compile(r"<\s*(?:br|/p|/div|/li|/tr|/h[1-6])\b[^>]*>", re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
+
+
+def fixture_source_path(directory: Path | str) -> str:
+    """The `source_path` that runs the adapter against a fixture directory."""
+    return f"{FIXTURE_PREFIX}{directory}"
 
 
 # ── identity ─────────────────────────────────────────────────────────────
@@ -103,7 +118,7 @@ def _is_diff(name: str, globs: tuple[str, ...]) -> bool:
 _CONTENT_CHANGES = {"add", "edit", "delete", "rename", "undelete"}
 
 
-def _changeset_change_kind(change_type: str) -> str | None:
+def _changeset_change_kind(change_type: str) -> ChangeKind | None:
     kinds = {part.strip().lower() for part in change_type.split(",")}
     if not kinds & _CONTENT_CHANGES:
         return None
@@ -124,56 +139,80 @@ class Attachment:
     oversized_diff: bool = False
 
 
+@dataclass(frozen=True)
+class FileChange:
+    """One source names one file as changed: a changeset entry or a diff
+    header, before code-root resolution."""
+
+    raw_path: str
+    change: ChangeKind
+    via: str
+
+
 @dataclass
-class _FileLinks:
-    """`CHANGES` edges from one node to source files, one edge per file.
-    The sink MERGEs a relationship on (from, type, to), so several sources
-    of the same link from one node share an edge and list every `via`."""
+class _FileLink:
+    resolved: ResolvedPath
+    change: ChangeKind
+    raw_path: str
+    vias: set[str] = field(default_factory=set)
 
-    _by_file: dict[str, tuple[ResolvedPath, str, str, set[str]]] = field(default_factory=dict)
 
-    def add(self, resolved: ResolvedPath, change: str, raw_path: str, via: str) -> None:
+def _link_files(
+    from_id: str,
+    changes: Iterable[FileChange],
+    resolve: Callable[[str], ResolvedPath | None],
+) -> tuple[tuple[Entity, ...], tuple[Relationship, ...], int]:
+    """`SOURCE_FILE` nodes and one `CHANGES` edge per file from `from_id`,
+    plus how many paths matched no code root. The sink MERGEs an edge on
+    (from, type, to), so several sources of one link share it: the edge
+    lists every `via` and keeps the strongest change kind."""
+    links: dict[str, _FileLink] = {}
+    unmapped = 0
+    for change in changes:
+        resolved = resolve(change.raw_path)
+        if resolved is None:
+            unmapped += 1
+            continue
         node_id = source_file_node_id(resolved)
-        existing = self._by_file.get(node_id)
-        if existing is None:
-            self._by_file[node_id] = (resolved, change, raw_path, {via})
+        link = links.get(node_id)
+        if link is None:
+            links[node_id] = _FileLink(resolved, change.change, change.raw_path, {change.via})
         else:
-            existing[3].add(via)
+            link.change = strongest(link.change, change.change)
+            link.vias.add(change.via)
 
-    def build(self, from_id: str) -> tuple[tuple[Entity, ...], tuple[Relationship, ...]]:
-        entities: list[Entity] = []
-        relationships: list[Relationship] = []
-        ordered = sorted(self._by_file.items(), key=lambda kv: (kv[1][0].root, kv[1][0].path))
-        for node_id, (resolved, change, raw_path, vias) in ordered:
-            entities.append(
-                Entity(
-                    id=node_id,
-                    type="SOURCE_FILE",
-                    name=resolved.path,
-                    origin="explicit",
-                    properties={"code_root": resolved.root, "path": resolved.path},
-                )
+    entities: list[Entity] = []
+    relationships: list[Relationship] = []
+    for node_id, link in sorted(links.items(), key=lambda kv: (kv[1].resolved.root, kv[1].resolved.path)):
+        entities.append(
+            Entity(
+                id=node_id,
+                type="SOURCE_FILE",
+                name=link.resolved.path,
+                origin="explicit",
+                properties={"code_root": link.resolved.root, "path": link.resolved.path},
             )
-            relationships.append(
-                Relationship(
-                    from_id=from_id,
-                    to_id=node_id,
-                    type="CHANGES",
-                    origin="explicit",
-                    properties={
-                        "via": "; ".join(sorted(vias)),
-                        "change": change,
-                        "raw_path": raw_path,
-                    },
-                )
+        )
+        relationships.append(
+            Relationship(
+                from_id=from_id,
+                to_id=node_id,
+                type="CHANGES",
+                origin="explicit",
+                properties={
+                    "via": "; ".join(sorted(link.vias)),
+                    "change": link.change,
+                    "raw_path": link.raw_path,
+                },
             )
-        return tuple(entities), tuple(relationships)
+        )
+    return tuple(entities), tuple(relationships), unmapped
 
 
 def connect(
     source_path: str,
     config: AzureDevOpsConfig,
-    transport: httpx.BaseTransport | None = None,
+    transport: Transport | None = None,
 ) -> AzureDevOpsClient:
     if source_path.startswith(FIXTURE_PREFIX):
         directory = Path(source_path[len(FIXTURE_PREFIX) :])
@@ -189,16 +228,16 @@ def connect(
 class AzureDevOpsSourceAdapter:
     source_type = "azure_devops"
 
-    def __init__(
-        self, config: AzureDevOpsConfig, transport: httpx.BaseTransport | None = None
-    ) -> None:
+    def __init__(self, config: AzureDevOpsConfig, transport: Transport | None = None) -> None:
         """`transport` overrides httpx's for a live `source_path` (tests);
         a `fixture:` path always uses the fixture transport."""
         self.config = config
         self._transport = transport
         self._client: AzureDevOpsClient | None = None
+        self._kinds: dict[str, DocKind] = {}
         self._work_items: dict[str, dict[str, Any]] = {}
         self._changesets: dict[str, tuple[int, list[int]]] = {}
+        self._failed_work_items: set[int] = set()
 
     @property
     def client(self) -> AzureDevOpsClient:
@@ -206,8 +245,8 @@ class AzureDevOpsSourceAdapter:
             raise RuntimeError("discover() must run before load()/extract()")
         return self._client
 
-    def _doc_id(self, kind: str, native_id: int) -> str:
-        return f"azure_devops:{self.client.project_url}:{kind}:{native_id}"
+    def _doc_id(self, kind: DocKind, native_id: int) -> str:
+        return f"azure_devops:{self.client.project_url}:{_DOC_ID_SEGMENT[kind]}:{native_id}"
 
     # ── discover ─────────────────────────────────────────────────────────
 
@@ -220,12 +259,14 @@ class AzureDevOpsSourceAdapter:
         work_items = client.get_work_items(client.query_work_item_ids())
         work_items.sort(key=lambda item: int(item["id"]))
 
-        self._work_items = {}
+        self._kinds, self._work_items, self._changesets = {}, {}, {}
+        self._failed_work_items = set()
         linkers: dict[int, list[tuple[int, int]]] = {}
         docs: list[SourceDoc] = []
         for item in work_items:
             item_id, rev = int(item["id"]), int(item["rev"])
-            doc_id = self._doc_id("wi", item_id)
+            doc_id = self._doc_id("work_item", item_id)
+            self._kinds[doc_id] = "work_item"
             self._work_items[doc_id] = item
             docs.append(
                 SourceDoc(
@@ -237,10 +278,10 @@ class AzureDevOpsSourceAdapter:
             for changeset_id in changeset_ids_linked_from(item):
                 linkers.setdefault(changeset_id, []).append((item_id, rev))
 
-        self._changesets = {}
         for changeset_id in sorted(linkers):
-            doc_id = self._doc_id("cs", changeset_id)
+            doc_id = self._doc_id("changeset", changeset_id)
             linked = sorted(linkers[changeset_id])
+            self._kinds[doc_id] = "changeset"
             self._changesets[doc_id] = (changeset_id, [i for i, _ in linked])
             revisions = ",".join(f"{i}@{r}" for i, r in linked)
             docs.append(
@@ -258,11 +299,21 @@ class AzureDevOpsSourceAdapter:
         """Fetches what `extract` needs. Any request failure propagates, so
         the pipeline marks this document failed and retries it next run
         (ADR-0037)."""
-        if doc.doc_id in self._work_items:
-            return self._load_work_item(doc)
-        if doc.doc_id in self._changesets:
+        kind = self._kinds.get(doc.doc_id)
+        if kind == "work_item":
+            return self._guard_work_item(doc, lambda: self._load_work_item(doc))
+        if kind == "changeset":
             return self._load_changeset(doc)
         raise KeyError(f"{doc.doc_id} was not discovered by this adapter")
+
+    def _guard_work_item(self, doc: SourceDoc, step: Callable[[], _T]) -> _T:
+        """Runs one step for a work item, remembering a failure so the
+        changesets it links are held back this run."""
+        try:
+            return step()
+        except Exception:
+            self._failed_work_items.add(int(self._work_items[doc.doc_id]["id"]))
+            raise
 
     def _load_work_item(self, doc: SourceDoc) -> LoadedDoc:
         item = self._work_items[doc.doc_id]
@@ -293,6 +344,11 @@ class AzureDevOpsSourceAdapter:
 
     def _load_changeset(self, doc: SourceDoc) -> LoadedDoc:
         changeset_id, linked_ids = self._changesets[doc.doc_id]
+        held_back = sorted(set(linked_ids) & self._failed_work_items)
+        if held_back:
+            raise AzureDevOpsError(
+                f"held back until linked work item(s) {held_back} ingest successfully"
+            )
         changeset = self.client.get_changeset(changeset_id)
         changes = list(self.client.iter_changeset_changes(changeset_id))
         return LoadedDoc(
@@ -309,8 +365,8 @@ class AzureDevOpsSourceAdapter:
     # ── extract: pure, from what `load` fetched ─────────────────────────
 
     def extract(self, loaded: LoadedDoc, config: Any) -> ExtractionResult:
-        if loaded.metadata.get("kind") == "work_item":
-            return self._extract_work_item(loaded)
+        if loaded.metadata["kind"] == "work_item":
+            return self._guard_work_item(loaded.doc, lambda: self._extract_work_item(loaded))
         return self._extract_changeset(loaded)
 
     def _requirement_ids(self, *texts: str) -> list[str]:
@@ -325,6 +381,11 @@ class AzureDevOpsSourceAdapter:
             if fields.get(reference_name) not in (None, ""):
                 return fields[reference_name]
         return None
+
+    def _warning(self, warnings: list[str]) -> str | None:
+        if not self.config.verify_tls:
+            warnings = [TLS_WARNING, *warnings]
+        return "; ".join(warnings) or None
 
     def _extract_work_item(self, loaded: LoadedDoc) -> ExtractionResult:
         item: dict[str, Any] = loaded.metadata["item"]  # type: ignore[assignment]
@@ -370,31 +431,27 @@ class AzureDevOpsSourceAdapter:
             },
         )
 
-        roots = self.config.code_root_map()
-        files = _FileLinks()
-        unmapped = 0
-        warnings: list[str] = []
-        for attachment in attachments:
-            if attachment.oversized_diff:
-                warnings.append(f"skipped {attachment.name}: larger than max_attachment_bytes")
-            if attachment.diff_text is None:
-                continue
-            for change in parse_diff(attachment.diff_text):
-                resolved = roots.resolve_diff_path(change.path)
-                if resolved is None:
-                    unmapped += 1
-                    continue
-                files.add(resolved, change.change, change.path, f"attachment {attachment.name}")
+        warnings = [
+            f"skipped {a.name}: larger than max_attachment_bytes" for a in attachments if a.oversized_diff
+        ]
+        diff_changes = [
+            FileChange(raw_path=c.path, change=c.change, via=f"attachment {a.name}")
+            for a in attachments
+            if a.diff_text is not None
+            for c in parse_diff(a.diff_text)
+        ]
+        file_entities, relationships, unmapped = _link_files(
+            issue.id, diff_changes, self.config.path_resolver().resolve_relative_path
+        )
         if unmapped:
             warnings.append(f"{unmapped} diff path(s) matched no code root")
 
-        file_entities, relationships = files.build(issue.id)
         return ExtractionResult(
             doc_id=loaded.doc.doc_id,
             content_hash=loaded.doc.content_hash,
             entities=(issue, *file_entities),
             relationships=relationships,
-            warning="; ".join(warnings) or None,
+            warning=self._warning(warnings),
         )
 
     def _extract_changeset(self, loaded: LoadedDoc) -> ExtractionResult:
@@ -432,25 +489,21 @@ class AzureDevOpsSourceAdapter:
             for work_item_id in work_item_ids
         )
 
-        roots = self.config.code_root_map()
-        files = _FileLinks()
-        unmapped = 0
+        file_changes = []
         for change in changes:
             kind = _changeset_change_kind(str(change.get("changeType", "")))
-            if kind is None:
-                continue
-            raw_path = str((change.get("item") or {}).get("path", ""))
-            resolved = roots.resolve_server_path(raw_path)
-            if resolved is None:
-                unmapped += 1
-                continue
-            files.add(resolved, kind, raw_path, via)
+            if kind is not None:
+                raw_path = str((change.get("item") or {}).get("path", ""))
+                file_changes.append(FileChange(raw_path=raw_path, change=kind, via=via))
+        file_entities, file_links, unmapped = _link_files(
+            commit.id, file_changes, self.config.path_resolver().resolve_server_path
+        )
 
-        file_entities, file_links = files.build(commit.id)
+        warnings = [f"{unmapped} changeset path(s) matched no code root"] if unmapped else []
         return ExtractionResult(
             doc_id=loaded.doc.doc_id,
             content_hash=loaded.doc.content_hash,
             entities=(commit, *file_entities),
             relationships=references + file_links,
-            warning=f"{unmapped} changeset path(s) matched no code root" if unmapped else None,
+            warning=self._warning(warnings),
         )

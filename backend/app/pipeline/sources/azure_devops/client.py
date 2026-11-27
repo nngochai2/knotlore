@@ -19,9 +19,14 @@ import httpx
 from app.pipeline.sources.azure_devops.config import AzureDevOpsConfig, PasswordAuth, PatAuth
 
 API_VERSION = "5.0"
+WIQL_CAP = 20_000  # the server's maximum WIQL result size
 WORK_ITEM_BATCH = 200  # the REST API's per-request maximum
 CHANGES_PAGE = 1000
 _TIMEOUT = httpx.Timeout(30.0, read=120.0)
+
+
+# What tests and fixture mode inject in place of httpx's network transport.
+Transport = httpx.BaseTransport
 
 
 class AzureDevOpsError(RuntimeError):
@@ -67,7 +72,7 @@ class AzureDevOpsClient:
         self,
         project_url: str,
         config: AzureDevOpsConfig,
-        transport: httpx.BaseTransport | None = None,
+        transport: Transport | None = None,
         require_auth: bool = True,
     ) -> None:
         self.project_url = project_url.rstrip("/")
@@ -104,22 +109,32 @@ class AzureDevOpsClient:
             clauses.append(f"({self._config.wiql_where})")
         query = f"SELECT [System.Id] FROM WorkItems WHERE {' AND '.join(clauses)} ORDER BY [System.Id]"
         data = self._request("POST", self._api("wit/wiql"), json={"query": query}).json()
-        return sorted(int(item["id"]) for item in data.get("workItems", []))
+        ids = sorted(int(item["id"]) for item in data.get("workItems", []))
+        if len(ids) >= WIQL_CAP:
+            # The result may be truncated; anything cut off would be cleaned
+            # up as removed. Fail instead (ADR-0037).
+            raise AzureDevOpsError(
+                f"the work item query returned {len(ids)} items, at the 20,000 WIQL cap; "
+                "narrow area_paths or wiql_where"
+            )
+        return ids
 
     def get_work_items(self, ids: list[int]) -> list[dict[str, Any]]:
+        """Fetches every requested work item, or fails. A work item the
+        query returned but the fetch didn't would otherwise look removed
+        (ADR-0037)."""
         items: list[dict[str, Any]] = []
         for start in range(0, len(ids), WORK_ITEM_BATCH):
             batch = ids[start : start + WORK_ITEM_BATCH]
             data = self._request(
                 "GET",
                 self._api("wit/workitems"),
-                params={
-                    "ids": ",".join(str(i) for i in batch),
-                    "$expand": "relations",
-                    "errorPolicy": "omit",
-                },
+                params={"ids": ",".join(str(i) for i in batch), "$expand": "relations"},
             ).json()
             items.extend(item for item in data.get("value", []) if item)
+        missing = sorted(set(ids) - {int(item["id"]) for item in items})
+        if missing:
+            raise AzureDevOpsError(f"work items {missing} were in the query but could not be fetched")
         return items
 
     def get_changeset(self, changeset_id: int) -> dict[str, Any]:

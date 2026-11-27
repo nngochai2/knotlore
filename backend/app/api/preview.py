@@ -37,7 +37,7 @@ from app.configs.store import ConfigNotFoundError, ConfigsStore
 from app.pipeline.core import Pipeline
 from app.pipeline.registry import CONFIG_FROM_DICT, SOURCES
 from app.pipeline.sinks.dryrun import DryRunSink
-from app.pipeline.sources.azure_devops.adapter import FIXTURE_PREFIX
+from app.pipeline.sources.azure_devops.adapter import fixture_source_path
 from app.pipeline.sources.obsidian import default_include_subfolder
 from app.pipeline.types import ExtractionResult, SourceDoc
 
@@ -116,7 +116,7 @@ def _relative_posix(path: str, root: Path) -> str:
 def _fixture_source_path(source_type: str, root: Path) -> str:
     """What a fixture run passes as `source_path`: the directory itself for
     file-based sources, the fixture-transport form for Azure DevOps."""
-    return f"{FIXTURE_PREFIX}{root}" if source_type == "azure_devops" else str(root)
+    return fixture_source_path(root) if source_type == "azure_devops" else str(root)
 
 
 def _is_fixture(source_type: str, doc: SourceDoc, root: Path, fixture_id: str) -> bool:
