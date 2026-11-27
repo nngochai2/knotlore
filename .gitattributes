@@ -1,0 +1,2 @@
+# Attachment fixtures are byte-exact (tests assert their MD5s).
+backend/tests/fixtures/azure_devops/attachments/* binary
