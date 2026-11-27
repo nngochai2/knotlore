@@ -1,125 +1,84 @@
-# Loom
+# Knotlore
 
-Loom is the write path of a knowledge-graph pipeline: it parses documents (Obsidian vaults, `.docx` specs) and ingests them into Neo4j through one pluggable pipeline abstraction. It's a from-scratch rebuild of the write-path half of an existing internal tool ("NAA"), which had bundled batch parsing together with unrelated MCP-server hosting concerns. The two halves now only share a contract: the graph database itself, versioned via `kg-schema/`. See [`docs/loom-spec.md`](docs/loom-spec.md) for the full spec and [`docs/adr/`](docs/adr/) for the decisions made while implementing it.
+**Give your AI assistant the requirements and history your code doesn't contain.**
+
+Knotlore is for teams maintaining long-lived systems whose real requirements live in documents (Word specs, wikis, Obsidian vaults) and in an issue tracker, not in the code. It ingests them into a self-hosted Neo4j knowledge graph with **deterministic, rule-driven extraction** and serves that graph to AI coding assistants over MCP. An assistant can then answer questions like:
+
+> *Which requirements does this file touch, where are they specified, and which work items changed them?*
+
+> **Status: pre-release, working toward v0.1.** Document ingestion, the job API and the Ingest/Instances UI work today. The Azure DevOps Server adapter, the knowledge MCP server and the one-command quickstart are in progress; see the [v0.1 milestone](https://github.com/nngochai2/loom/milestones). The repo is being renamed from its working name, `loom`, so the code still uses that name in places.
+
+## How it works
 
 ```
-[SourceAdapter] → [Extraction] → [RuleEngine] → [SinkAdapter(s)]
+[SourceAdapter] → [Extraction] → [RuleEngine] → [SinkAdapter(s)] → Neo4j ← knowledge MCP ← your AI assistant
 ```
 
-Everything is one pipeline. Obsidian vs. docx are source adapters; Neo4j (and later ChromaDB) are sink adapters.
+- **Sources.** Obsidian vaults and `.docx` specs today. **Azure DevOps Server** (on-prem) is coming in v0.1: work items, associated TFVC changesets and attached `.diff` files, linked to the files they change and the requirements they cite.
+- **Deterministic extraction.** YAML rule files (regex over document tables and text, edited through a form with live preview) map content onto a fixed, versioned schema, [`kg-schema`](kg-schema/schema.json). No LLM in the core path. An opt-in, local-only (Ollama) LLM pass exists for prose sections.
+- **Provenance on everything.** Every node and edge records its `origin` (`extracted` / `explicit` / `curated`), source document, content hash, the rule that produced it and the schema version. Traceability links also record where they came from (`via: changeset 123`, `via: attachment fix.diff`).
+- **Incremental and safe to re-run.** Unchanged documents are skipped by content hash. Changed or removed ones are cleaned up and rewritten. Human corrections (`curated`) always survive re-ingestion, and edges left dangling by a re-ingest are flagged, never silently deleted.
+- **Knowledge MCP** *(v0.1)*: traceability-shaped tools over Streamable HTTP, not raw graph queries.
 
-## Status
+What Knotlore deliberately is **not**: a document manager, a code graph (your assistant already reads code well), or a general-purpose MCP hub.
 
-Phase 1 (pipeline core via CLI, no API, no UI) is done and gated. Phase 2 (job runner + FastAPI) is in progress:
+## Security model
 
-| Piece | Status |
-|---|---|
-| Schema contract (`kg-schema`) + SQLite operational store | done |
-| Obsidian → Neo4j ingest (CLI) | done |
-| Docx → Neo4j ingest (CLI), rule engine + rule-file schema | done |
-| Incremental re-ingestion, curated immunity, orphan flagging | done |
-| Golden-fixture parity gate (proves the port preserves NAA's real extraction behavior) | done |
-| Jobs API + async runner (`POST/GET /jobs`, cancel, polling) | done |
-| Configs API (CRUD over parsing-rule YAML, JSON Schema validated) | done |
-| Preview endpoint (`POST /configs/{id}/preview`, `DryRunSink`) | done |
-| Rules page, Graph correction canvas, vector sink | not started |
+**No authentication: run Knotlore only on a trusted network.** From v0.1, every service binds to `127.0.0.1` by default and exposing it to a network is an explicit choice. Until then, note that the development `docker-compose.yml` publishes Neo4j's and Ollama's ports on all interfaces. See [SECURITY.md](SECURITY.md) and [ADR-0032](docs/adr/0032-trusted-network-deployment-localhost-default.md).
 
-232 backend tests passing, `mypy --strict` clean.
+## Getting started (development)
 
-## Extraction
+The v0.1 target is `docker compose up` → a working traceability answer from a bundled synthetic sample in under 5 minutes. Until then:
 
-Extraction is deterministic, regex/rule-based pattern matching — lifted from NAA's actual parsing code, not an LLM (see [ADR-0001](docs/adr/0001-lift-deterministic-extraction-not-llm.md)):
-
-- **Obsidian** (`app/pipeline/sources/obsidian.py`) — parses vault `.md` files: wikilinks become `origin: explicit` relationships (ground truth from the document itself, bypassing rule inference entirely), folder/keyword signals classify notes into entity types. Classification config lives in per-vault YAML, not hardcoded Python ([ADR-0004](docs/adr/0004-classification-rules-in-yaml-config.md)).
-- **Docx** (`app/pipeline/sources/docx.py` + `app/pipeline/rules/`) — a YAML rule file (`app/pipeline/rules/schema.py` defines its JSON Schema) drives a generic table-row rule engine (`app/pipeline/rules/engine.py`): an `id_pattern` recognizes item rows, `category_signals` and `named_extractions` apply regex against each row's text. Only the generic single-parent-link structuring is lifted from NAA's docx parser — its project-specific document hierarchy is deliberately not part of Loom's core ([ADR-0006](docs/adr/0006-generic-docx-parent-link-only.md)).
-
-Every extracted/explicit graph element carries mandatory properties defined in [`kg-schema/schema.json`](kg-schema/schema.json): `origin`, `source_doc`, `content_hash`, `rule_id`, `schema_version`, `created_at`/`updated_at`. Rule files map their output onto a type already in `kg-schema`'s fixed, versioned entity/relationship enum — they never invent a Neo4j label directly ([ADR-0002](docs/adr/0002-fixed-versioned-schema-not-dynamic-labels.md)).
-
-## Incremental re-ingestion
-
-Re-running ingest against the same source is cheap and safe (spec §6):
-
-- Unchanged docs (by content hash, tracked in SQLite) are skipped — zero graph writes.
-- Changed docs get their prior non-curated contribution deleted, then rewritten.
-- Docs removed from the source entirely get the same cleanup, plus their SQLite hash row dropped.
-- `origin: curated` elements — human corrections made via the (future) graph canvas — always survive re-ingestion, even when re-extraction would otherwise recreate a duplicate.
-- If re-ingestion would leave a curated edge pointing at a node that no longer exists, that edge is never auto-deleted — it's flagged `orphaned: true` and surfaced in the job result for a human to resolve.
-
-## API
-
-FastAPI app (`app/main.py`), run via `uvicorn app.main:create_app --factory`. No external queue — jobs run in-process (spec §8).
-
-- **Jobs** (`app/api/jobs.py`, `app/jobs/`) — `POST /jobs` starts an ingest run as a background `asyncio` task and returns immediately; `GET /jobs`/`GET /jobs/{id}` poll status, progress, and per-doc results (no SSE, by design); `POST /jobs/{id}/cancel` stops a run at its next doc boundary. Job history lives in the same SQLite operational store as doc-hash tracking.
-- **Configs** (`app/api/configs.py`, `app/configs/`) — CRUD over parsing-rule config YAML on disk, which stays the source of truth; the API only reads/writes it. `GET /configs` lists rule sets (id, source type, title); `GET /configs/{id}` returns the parsed YAML plus its JSON Schema so a client can render a form without a second round trip; `POST`/`PUT` validate against the docx rule-file schema (`app/pipeline/rules/schema.py`) or the Obsidian source-config schema (`app/pipeline/sources/obsidian_schema.py`, [ADR-0004](docs/adr/0004-classification-rules-in-yaml-config.md)) — an invalid config is rejected with structured schema errors and nothing is written.
-- **Preview** (`app/api/preview.py`) — `POST /configs/{id}/preview` runs a config's source adapter through the exact same `Pipeline.run` a real job uses, but with `DryRunSink` (`app/pipeline/sinks/dryrun.py`) as the only sink, so nothing is written to Neo4j/ChromaDB. This is the spec's explicit design test for the pipeline abstraction (§4.1): preview has no extraction code path of its own. The sample is either a named fixture (`fixture_id`, resolved against the full fixture source root so cross-document structure like Obsidian wikilinks resolves the same as it would in a real job) or a one-off `multipart/form-data` upload (`sample`) dropped into its own throwaway directory — exactly one of the two per request.
-
-## Getting started
-
-Requires Python 3.11+, [`uv`](https://github.com/astral-sh/uv), and Docker (for Neo4j).
+Requires Python 3.11+, [`uv`](https://github.com/astral-sh/uv), Node.js 22+ and Docker.
 
 ```bash
-# Start Neo4j
+# Neo4j (and Ollama, only needed for the opt-in prose extraction)
 docker compose up -d
 
-# Install the backend (from backend/)
+# Backend
 cd backend
-uv pip install -e ".[dev]"
-cp .env.example .env   # NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD
-
-# Run an ingest
-python cli.py ingest --source obsidian --path ./path/to/vault \
-    --sink neo4j --config ./path/to/vault-config.yml --db ./loom.sqlite3
-
-python cli.py ingest --source docx --path ./path/to/docs \
-    --sink neo4j --config ./path/to/rules.yml --db ./loom.sqlite3
-
-# Or run the API instead of the CLI
+uv venv && uv pip install -e ".[dev]"
+cp .env.example .env          # NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD
 uvicorn app.main:create_app --factory --reload
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
 ```
 
-Omit `--db` for a one-shot full ingest with no hash-skip/doc-removal bookkeeping — the same shape `preview` runs through via `DryRunSink`.
-
-The API reads `LOOM_DB_PATH` (default `./loom.sqlite3`) and `LOOM_CONFIGS_DIR` (default `./configs`) from the environment, both created on first use if missing, plus `LOOM_FIXTURES_DIR` (default `./tests/fixtures`) pointing `preview`'s named-fixture lookup at an existing directory of sample docs.
-
-## Development
+Or ingest from the CLI without the API or UI:
 
 ```bash
 cd backend
-mypy app cli.py    # strict, must stay clean
-pytest              # full suite; no live Neo4j required — sinks are tested against fakes/doubles
+python cli.py ingest --source obsidian --path ./path/to/vault \
+    --sink neo4j --config ./path/to/vault-config.yml --db ./loom.sqlite3
+python cli.py ingest --source docx --path ./path/to/docs \
+    --sink neo4j --config ./path/to/rules.yml --db ./loom.sqlite3
 ```
 
-`backend/tests/fixtures/` holds a small fixture Obsidian vault and a docx fixture set (plain prose, a requirements table, an intentional zero-extraction case), exercised end-to-end through the real pipeline in `test_fixture_vault_integration.py` / `test_fixture_docs_integration.py`.
+Run the checks with `mypy app cli.py` and `pytest` in `backend/`. They need no live Neo4j. More detail is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-`backend/tests/test_golden_fixture_parity.py` is the Phase 1 exit gate ([ADR-0007](docs/adr/0007-golden-fixture-parity-gate.md)): it diffs Loom's ported adapters against a recorded snapshot of NAA's real parser output for the same fixtures, so a future change to an adapter can't silently drift from the behavior being preserved. The snapshot is regenerated (locally only, against the sibling NAA checkout — not a CI dependency) via `backend/scripts/generate_golden_fixture_snapshot.py`.
+## Documentation
+
+- [`docs/loom-spec.md`](docs/loom-spec.md): the full specification, including behavioural invariants, the API surface and build phases.
+- [`docs/adr/`](docs/adr/): one file per architectural decision. Start with [ADR-0027](docs/adr/0027-product-positioning-knotlore.md) (positioning) and [ADR-0034](docs/adr/0034-v0-1-release-scope-and-quickstart-criterion.md) (v0.1 scope).
+- [`CONTEXT.md`](CONTEXT.md): domain glossary.
 
 ## Repository layout
 
 ```
-loom/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                 # FastAPI app factory (create_app)
-│   │   ├── api/{jobs,configs,preview}.py   # Jobs API / Configs API / preview endpoint
-│   │   ├── pipeline/
-│   │   │   ├── core.py             # Pipeline.run — the orchestrator
-│   │   │   ├── types.py            # SourceDoc, LoadedDoc, ExtractionResult, JobResult, ...
-│   │   │   ├── sources/{base,obsidian,docx,obsidian_schema}.py
-│   │   │   ├── rules/{engine,schema}.py
-│   │   │   └── sinks/{base,neo4j,dryrun}.py
-│   │   ├── jobs/{runner,store}.py  # async job runner + SQLite: jobs, doc-hash tracking, correction log
-│   │   ├── configs/store.py        # file-backed CRUD over parsing-rule config YAML
-│   │   └── db/neo4j_client.py      # the only module importing the bolt driver
-│   ├── cli.py                      # Phase 1 entry point: run the pipeline without API/UI
-│   ├── scripts/generate_golden_fixture_snapshot.py
-│   └── tests/
-│       └── fixtures/               # fixture vault, docx set, golden snapshots
-├── docs/
-│   ├── loom-spec.md
-│   ├── adr/                        # one file per architectural decision
-│   └── agents/                     # issue-tracker/triage/domain-doc conventions for agent work
-├── kg-schema/                      # versioned entity/relationship schema — the contract with NAA's read path
-└── docker-compose.yml              # Neo4j only, for local dev
+backend/      FastAPI app, ingestion pipeline (sources, rules, sinks), job runner, CLI
+frontend/     React + Vite + TypeScript UI
+kg-schema/    versioned entity/relationship schema, the contract between ingestion and the MCP server
+docs/         spec, ADRs, agent workflow conventions
 ```
 
-Issues and PRDs are tracked as GitHub issues on this repo — see [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
+## Contributing
+
+Issues and PRs are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) first.
+
+## License
+
+[MIT](LICENSE)

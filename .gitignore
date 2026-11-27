@@ -43,3 +43,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 *.sqlite3
+
+# agent skills (kept local, not published)
+/.claude/
+/skills-lock.json
