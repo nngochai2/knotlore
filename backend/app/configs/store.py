@@ -25,15 +25,21 @@ import yaml
 from jsonschema import Draft202012Validator, ValidationError
 
 from app.pipeline.rules.schema import RULE_FILE_SCHEMA, validate_rule_file
+from app.pipeline.sources.azure_devops.config import (
+    AZURE_DEVOPS_CONFIG_SCHEMA,
+    validate_azure_devops_config,
+)
 from app.pipeline.sources.obsidian_schema import OBSIDIAN_CONFIG_SCHEMA, validate_obsidian_config
 
 _SCHEMAS_BY_SOURCE_TYPE: dict[str, dict[str, Any]] = {
     "docx": RULE_FILE_SCHEMA,
     "obsidian": OBSIDIAN_CONFIG_SCHEMA,
+    "azure_devops": AZURE_DEVOPS_CONFIG_SCHEMA,
 }
 _VALIDATORS_BY_SOURCE_TYPE: dict[str, Callable[[dict[str, Any]], None]] = {
     "docx": validate_rule_file,
     "obsidian": validate_obsidian_config,
+    "azure_devops": validate_azure_devops_config,
 }
 
 # No path separators, no ".." anywhere, and must not be entirely dots -- a

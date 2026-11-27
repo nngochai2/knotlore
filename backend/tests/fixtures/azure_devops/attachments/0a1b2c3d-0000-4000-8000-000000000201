@@ -1,0 +1,5 @@
+--- $/Sample/Main/src/Billing/Rounding.cs;C1990
++++ $/Sample/Main/src/Billing/Rounding.cs	2026-11-21 09:00:00
+@@ -1 +1 @@
+-round
++round half even

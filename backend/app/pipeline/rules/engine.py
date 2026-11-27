@@ -45,6 +45,22 @@ def _parse_flags(flags: str) -> int:
     return result
 
 
+def parse_flags(flags: str) -> int:
+    """Rule-file regex flags (`"IGNORECASE|MULTILINE"`) as `re` flags."""
+    return _parse_flags(flags)
+
+
+def format_requirement_id(match: re.Match[str], id_format: str) -> str:
+    """Normalise a matched requirement ID: `id_format` applied to the first
+    group as an integer (`BR{:02d}`), else to the whole match. Shared by
+    every source that recognises requirement IDs, so the same ID always
+    normalises to the same `req_id` (ADR-0036)."""
+    try:
+        return id_format.format(int(match.group(1)))
+    except (IndexError, ValueError):
+        return id_format.format(match.group(0))
+
+
 @dataclass(frozen=True)
 class TableRow:
     """One table row's non-empty, merged-cell-deduplicated cell texts."""
@@ -138,10 +154,7 @@ class RuleEngine:
         return tuple(entities), tuple(relationships)
 
     def _format_id(self, match: re.Match[str]) -> str:
-        try:
-            return self._rule_file.id_format.format(int(match.group(1)))
-        except (IndexError, ValueError):
-            return self._rule_file.id_format.format(match.group(0))
+        return format_requirement_id(match, self._rule_file.id_format)
 
     def _extract_title(self, body: str, fallback: str) -> str:
         if self._rule_file.title_from == "first_line":

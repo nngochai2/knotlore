@@ -37,8 +37,9 @@ from app.configs.store import ConfigNotFoundError, ConfigsStore
 from app.pipeline.core import Pipeline
 from app.pipeline.registry import CONFIG_FROM_DICT, SOURCES
 from app.pipeline.sinks.dryrun import DryRunSink
+from app.pipeline.sources.azure_devops.adapter import FIXTURE_PREFIX
 from app.pipeline.sources.obsidian import default_include_subfolder
-from app.pipeline.types import ExtractionResult
+from app.pipeline.types import ExtractionResult, SourceDoc
 
 # Where each source type's discoverable fixture samples live, relative to
 # `fixtures_dir` -- the same fixture set `backend/tests/fixtures` already
@@ -47,6 +48,9 @@ from app.pipeline.types import ExtractionResult
 _FIXTURE_SUBDIR_BY_SOURCE_TYPE: dict[str, str] = {
     "docx": "docs",
     "obsidian": "vault",
+    # The synthetic Azure DevOps project, served by its fixture transport
+    # (ADR-0037); a sample is one of its work item IDs.
+    "azure_devops": "azure_devops",
 }
 
 # The extension `discover()` globs for per source type (docx.py's
@@ -107,6 +111,18 @@ def _to_extraction_result_out(result: ExtractionResult) -> ExtractionResultOut:
 
 def _relative_posix(path: str, root: Path) -> str:
     return Path(path).resolve().relative_to(root.resolve()).as_posix()
+
+
+def _fixture_source_path(source_type: str, root: Path) -> str:
+    """What a fixture run passes as `source_path`: the directory itself for
+    file-based sources, the fixture-transport form for Azure DevOps."""
+    return f"{FIXTURE_PREFIX}{root}" if source_type == "azure_devops" else str(root)
+
+
+def _is_fixture(source_type: str, doc: SourceDoc, root: Path, fixture_id: str) -> bool:
+    if source_type == "azure_devops":
+        return doc.doc_id.endswith(f":wi:{fixture_id}")
+    return _relative_posix(doc.path, root) == fixture_id
 
 
 def _run_dryrun_for_doc(adapter: Any, source_root: str, config: Any, target_doc_id: str) -> ExtractionResult:
@@ -191,17 +207,25 @@ def create_preview_router(
                     422, f"No fixtures available for source_type {detail.source_type!r}"
                 )
 
-            docs = adapter.discover(str(source_root))
+            source_path = _fixture_source_path(detail.source_type, source_root)
+            docs = adapter.discover(source_path)
             target = next(
-                (d for d in docs if _relative_posix(d.path, source_root) == fixture_id), None
+                (d for d in docs if _is_fixture(detail.source_type, d, source_root, fixture_id)),
+                None,
             )
             if target is None:
                 raise HTTPException(404, f"Fixture {fixture_id!r} not found")
 
-            result = _run_dryrun_for_doc(adapter, str(source_root), config, target.doc_id)
+            result = _run_dryrun_for_doc(adapter, source_path, config, target.doc_id)
             return _to_extraction_result_out(result)
 
         assert sample is not None
+        if detail.source_type not in _UPLOAD_EXTENSION_BY_SOURCE_TYPE:
+            raise HTTPException(
+                422,
+                f"{detail.source_type!r} configs preview against a fixture_id only; "
+                "an uploaded sample can't stand in for a tracker project",
+            )
         content = await sample.read()
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

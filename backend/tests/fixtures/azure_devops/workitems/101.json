@@ -1,0 +1,54 @@
+{
+ "id": 101,
+ "rev": 3,
+ "url": "https://ado.example.test/DefaultCollection/Sample/_apis/wit/workItems/101",
+ "fields": {
+  "System.Id": 101,
+  "System.Rev": 3,
+  "System.WorkItemType": "User Story",
+  "System.Title": "Invoice totals include tax",
+  "System.State": "Resolved",
+  "System.AreaPath": "Sample\\Billing",
+  "System.IterationPath": "Sample\\Release 1\\Sprint 2",
+  "Microsoft.VSTS.Scheduling.StoryPoints": 5,
+  "System.Description": "<div>Implements <b>BR-01</b> &amp; touches br 3.</div><div>See attached spec.</div>",
+  "Microsoft.VSTS.Common.AcceptanceCriteria": "<ul><li>Totals match BR-01</li><li>Tax rounding per BR-02</li></ul>"
+ },
+ "relations": [
+  {
+   "rel": "System.LinkTypes.Hierarchy-Reverse",
+   "url": "https://ado.example.test/DefaultCollection/Sample/_apis/wit/workItems/100",
+   "attributes": {
+    "isLocked": false
+   }
+  },
+  {
+   "rel": "ArtifactLink",
+   "url": "vstfs:///VersionControl/Changeset/2001",
+   "attributes": {
+    "name": "Fixed in Changeset"
+   }
+  },
+  {
+   "rel": "AttachedFile",
+   "url": "https://ado.example.test/DefaultCollection/_apis/wit/attachments/0a1b2c3d-0000-4000-8000-000000000101",
+   "attributes": {
+    "name": "fix-101.diff",
+    "resourceSize": 400
+   }
+  },
+  {
+   "rel": "AttachedFile",
+   "url": "https://ado.example.test/DefaultCollection/_apis/wit/attachments/0a1b2c3d-0000-4000-8000-000000000102",
+   "attributes": {
+    "name": "Billing spec.docx",
+    "resourceSize": 24
+   }
+  },
+  {
+   "rel": "Hyperlink",
+   "url": "https://wiki.example.test/billing",
+   "attributes": {}
+  }
+ ]
+}

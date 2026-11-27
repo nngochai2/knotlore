@@ -1,0 +1,5 @@
+{"changesetId": 2002, "author": {"displayName": "Dev Two"}, "createdDate": "2026-11-21T09:30:00Z",
+ "comment": "Fix rounding",
+ "changes": [
+  {"item": {"path": "$/Sample/Dev/src/Billing/Rounding.cs"}, "changeType": "edit, merge"}
+ ]}

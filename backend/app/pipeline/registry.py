@@ -14,6 +14,11 @@ from app.pipeline.rules.schema import RuleFile, load_rule_file, rule_file_from_d
 from app.pipeline.sinks.base import SinkAdapter
 from app.pipeline.sinks.dryrun import DryRunSink
 from app.pipeline.sinks.neo4j import Neo4jSink
+from app.pipeline.sources.azure_devops.adapter import AzureDevOpsSourceAdapter
+from app.pipeline.sources.azure_devops.config import (
+    azure_devops_config_from_dict,
+    load_azure_devops_config,
+)
 from app.pipeline.sources.docx import DocxSourceAdapter
 from app.pipeline.sources.obsidian import ObsidianSourceAdapter
 from app.pipeline.sources.obsidian import load_config as load_obsidian_config
@@ -24,6 +29,7 @@ from app.pipeline.types import ExtractionVersion
 SOURCES: dict[str, tuple[type, Callable[[str], Any]]] = {
     "obsidian": (ObsidianSourceAdapter, load_obsidian_config),
     "docx": (DocxSourceAdapter, load_rule_file),
+    "azure_devops": (AzureDevOpsSourceAdapter, load_azure_devops_config),
 }
 
 
@@ -43,6 +49,7 @@ def _docx_extraction_version(config: Any) -> ExtractionVersion | None:
 EXTRACTION_VERSION: dict[str, Callable[[Any], ExtractionVersion | None]] = {
     "obsidian": lambda config: None,
     "docx": _docx_extraction_version,
+    "azure_devops": lambda config: None,
 }
 
 # The dict-input counterpart to SOURCES' path-input config loaders -- same
@@ -51,6 +58,7 @@ EXTRACTION_VERSION: dict[str, Callable[[Any], ExtractionVersion | None]] = {
 CONFIG_FROM_DICT: dict[str, Callable[[dict[str, Any]], Any]] = {
     "obsidian": obsidian_config_from_dict,
     "docx": rule_file_from_dict,
+    "azure_devops": azure_devops_config_from_dict,
 }
 
 # One entry per sink_type; chroma registers here once its ticket lands.

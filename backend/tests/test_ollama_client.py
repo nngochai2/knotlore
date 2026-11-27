@@ -116,6 +116,10 @@ def _modules_importing_httpx() -> list[Path]:
     for path in APP_ROOT.rglob("*.py"):
         if path == APP_ROOT / "llm" / "ollama_client.py":
             continue
+        if APP_ROOT / "pipeline" / "sources" / "azure_devops" in path.parents:
+            # The read-only tracker client (ADR-0035) talks to an Azure
+            # DevOps Server, never to an LLM; it sends no document content.
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import) and any(
@@ -132,6 +136,7 @@ def _modules_importing_httpx() -> list[Path]:
 def test_no_module_outside_ollama_client_imports_httpx():
     offenders = _modules_importing_httpx()
     assert offenders == [], (
-        f"Only llm/ollama_client.py may import httpx to reach an LLM (ADR-0019); "
+        f"Only llm/ollama_client.py may import httpx to reach an LLM (ADR-0019), and only "
+        f"pipeline/sources/azure_devops/ to read the tracker (ADR-0035); "
         f"found imports in: {offenders}"
     )

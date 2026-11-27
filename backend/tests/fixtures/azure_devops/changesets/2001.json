@@ -1,0 +1,9 @@
+{"changesetId": 2001, "author": {"displayName": "Dev One"}, "createdDate": "2026-11-20T10:00:00Z",
+ "comment": "Tax on invoice totals (BR-01)",
+ "changes": [
+  {"item": {"path": "$/Sample/Main/src/Billing/Invoice.cs"}, "changeType": "edit"},
+  {"item": {"path": "$/Sample/Main/src/Billing/TaxRule.cs"}, "changeType": "add, encoding"},
+  {"item": {"path": "$/Sample/Dev/src/Billing/Old.cs"}, "changeType": "branch, merge"},
+  {"item": {"path": "$/Sample/Main/src/Billing/Legacy.cs"}, "changeType": "delete"},
+  {"item": {"path": "$/Elsewhere/readme.txt"}, "changeType": "edit"}
+ ]}

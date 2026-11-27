@@ -25,7 +25,11 @@ from app.api._registry_validation import validate_source_and_sinks
 from app.jobs.runner import JobRunner
 from app.jobs.store import DuplicateInstanceError, InstanceRow, now_iso
 
-_SOURCE_LABELS = {"obsidian": "Obsidian vault", "docx": "Documents folder"}
+_SOURCE_LABELS = {
+    "obsidian": "Obsidian vault",
+    "docx": "Documents folder",
+    "azure_devops": "Azure DevOps project",
+}
 
 
 def _auto_name(source_type: str, source_path: str) -> str:

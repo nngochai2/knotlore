@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useConfirm } from "@/components/confirm-dialog";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { configTitle, SINK_OPTIONS, sinkLabel, SOURCE_TYPES, sourceLabel } from "@/lib/registry";
+import { configTitle, SINK_OPTIONS, sinkLabel, SOURCE_TYPES, sourceLabel, sourcePathPlaceholder } from "@/lib/registry";
 
 const STEPS = ["Source", "Destination", "Path & config", "Review & run"] as const;
 const NEW_INSTANCE = "__new__";
@@ -329,7 +329,7 @@ export function Ingest() {
                     value={draft.sourcePath}
                     onChange={(e) => setDraft((prev) => ({ ...prev, sourcePath: e.target.value }))}
                     disabled={identityLocked}
-                    placeholder="/path/to/vault-or-folder"
+                    placeholder={sourcePathPlaceholder(draft.sourceType)}
                   />
                 </div>
                 <div>
