@@ -169,7 +169,11 @@ def test_delete_non_curated_for_doc_excludes_curated_origin():
 
     queries = driver.session_obj.queries
     assert any("origin" in cypher and "curated" in cypher for cypher, _ in queries)
-    assert all(params.get("doc_id") == "doc1" for _, params in queries)
+    # Every doc-scoped query binds doc_id. The shared-node GC (ADR-0036) is
+    # deliberately global -- an unlinked shared node is garbage whichever
+    # doc's cleanup unlinked it -- so it's the one query without it.
+    doc_scoped = [params for cypher, params in queries if "source_doc" in cypher]
+    assert doc_scoped and all(params.get("doc_id") == "doc1" for params in doc_scoped)
 
 
 def test_delete_non_curated_uses_a_directed_relationship_match():
@@ -299,3 +303,81 @@ def test_entity_write_removes_stale_entity_labels_before_setting_the_new_one():
     assert remove_line.index("REMOVE") < cypher.index(set_line)
     # every kg-schema entity type is stripped, not just the ones seen so far
     assert "TASK" in remove_line and "ARCHITECTURE" in remove_line
+
+
+def _source_file(entity_id: str = "f1"):
+    return Entity(
+        id=entity_id,
+        type="SOURCE_FILE",
+        name="src/Foo.cs",
+        origin="explicit",
+        rule_id=None,
+        properties={"code_root": "main", "path": "src/Foo.cs"},
+    )
+
+
+def test_shared_entity_is_written_without_an_owning_document():
+    # ADR-0036: a SOURCE_FILE node is shared by every document that links
+    # to it, so stamping the last writer's source_doc would let that
+    # document's re-ingestion delete it out from under the others.
+    driver = FakeDriver()
+    sink = Neo4jSink(driver=driver)
+    result = ExtractionResult(doc_id="wi:1", content_hash="h1", entities=(_source_file(),))
+
+    sink.write("wi:1", result)
+
+    _, params = driver.session_obj.queries[0]
+    row = params["rows"][0]
+    assert row["source_doc"] is None
+    assert row["content_hash"] is None
+    assert row["properties"] == {"code_root": "main", "path": "src/Foo.cs"}
+
+
+def test_owned_entity_still_carries_its_document_next_to_a_shared_one():
+    driver = FakeDriver()
+    sink = Neo4jSink(driver=driver)
+    issue = Entity(id="i1", type="ISSUE", name="Fix login", origin="explicit")
+    result = ExtractionResult(doc_id="wi:1", content_hash="h1", entities=(issue, _source_file()))
+
+    sink.write("wi:1", result)
+
+    rows = {row["id"]: row for _, params in driver.session_obj.queries for row in params["rows"]}
+    assert rows["i1"]["source_doc"] == "wi:1"
+    assert rows["f1"]["source_doc"] is None
+
+
+def test_delete_non_curated_for_doc_garbage_collects_unlinked_shared_nodes():
+    driver = FakeDriver(
+        run_results=[
+            FakeResult(record={"c": 2}),
+            FakeResult(),
+            FakeResult(record={"c": 1}),
+            FakeResult(record={"c": 3}),
+        ]
+    )
+    sink = Neo4jSink(driver=driver)
+
+    report = sink.delete_non_curated_for_doc("wi:1")
+
+    queries = driver.session_obj.queries
+    gc_idx, gc_query = next(
+        (i, cypher) for i, (cypher, _) in enumerate(queries) if "SOURCE_FILE" in cypher
+    )
+    assert "NOT EXISTS" in gc_query and "DELETE n" in gc_query
+    assert "DETACH" not in gc_query  # only nodes with no relationships at all
+    # Runs last: only once this doc's edges are gone can a shared node
+    # have become unlinked.
+    assert gc_idx == len(queries) - 1
+    assert report.deleted_count == 6
+
+
+def test_owned_node_delete_never_matches_a_shared_node():
+    driver = FakeDriver()
+    sink = Neo4jSink(driver=driver)
+
+    sink.delete_non_curated_for_doc("wi:1")
+
+    detach_query = next(c for c, _ in driver.session_obj.queries if "DETACH DELETE n" in c)
+    # Shared nodes carry no source_doc, so the owned-node delete -- keyed on
+    # source_doc -- can't reach them.
+    assert "{source_doc: $doc_id}" in detach_query

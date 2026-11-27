@@ -28,14 +28,23 @@ _schema = _load_schema()
 SCHEMA_VERSION: str = _VERSION_PATH.read_text(encoding="utf-8").strip()
 ENTITY_TYPES: tuple[str, ...] = tuple(_schema["entity_types"])
 RELATIONSHIP_TYPES: tuple[str, ...] = tuple(_schema["relationship_types"])
+# Entity types whose nodes are shared by every document that links to them
+# and owned by none (ADR-0036): written without source_doc/content_hash, never
+# deleted by a document's cleanup, garbage-collected once nothing links to them.
+SHARED_ENTITY_TYPES: tuple[str, ...] = tuple(_schema.get("shared_entity_types", ()))
 DEFAULT_RELATIONSHIP_TYPE: str = _schema["default_relationship_type"]
 MANDATORY_PROPERTIES: tuple[dict[str, Any], ...] = tuple(_schema["mandatory_properties"])
 MANDATORY_PROPERTY_NAMES: tuple[str, ...] = tuple(p["name"] for p in MANDATORY_PROPERTIES)
+
+_unknown_shared = set(SHARED_ENTITY_TYPES) - set(ENTITY_TYPES)
+if _unknown_shared:
+    raise ValueError(f"shared_entity_types not in entity_types: {sorted(_unknown_shared)}")
 
 __all__ = [
     "SCHEMA_VERSION",
     "ENTITY_TYPES",
     "RELATIONSHIP_TYPES",
+    "SHARED_ENTITY_TYPES",
     "DEFAULT_RELATIONSHIP_TYPE",
     "MANDATORY_PROPERTIES",
     "MANDATORY_PROPERTY_NAMES",

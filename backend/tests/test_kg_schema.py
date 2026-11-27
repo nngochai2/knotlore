@@ -12,6 +12,9 @@ EXPECTED_ENTITY_TYPES = (
     "NOTE",
     "TAG",
     "REQUIREMENT",
+    "ISSUE",
+    "COMMIT",
+    "SOURCE_FILE",
 )
 
 EXPECTED_RELATIONSHIP_TYPES = (
@@ -28,6 +31,8 @@ EXPECTED_RELATIONSHIP_TYPES = (
     "VIOLATES",
     "LINKS_TO",
     "TAGGED_WITH",
+    "REFERENCES",
+    "CHANGES",
 )
 
 EXPECTED_MANDATORY_PROPERTY_NAMES = (
@@ -77,3 +82,28 @@ def test_absent_for_origins_matches_spec_notes(origin, absent_properties):
         if origin in prop.get("absent_for_origins", ())
     }
     assert actually_absent == absent_properties
+
+
+def test_schema_version_is_1_2_0_for_traceability_types():
+    # ADR-0036: additive bump adding ISSUE/COMMIT/SOURCE_FILE, REFERENCES/
+    # CHANGES and shared entity types.
+    assert kg_schema.SCHEMA_VERSION == "1.2.0"
+
+
+def test_source_file_is_the_only_shared_entity_type():
+    assert kg_schema.SHARED_ENTITY_TYPES == ("SOURCE_FILE",)
+
+
+def test_shared_entity_types_are_all_entity_types():
+    assert set(kg_schema.SHARED_ENTITY_TYPES) <= set(kg_schema.ENTITY_TYPES)
+
+
+def test_ownership_properties_are_absent_for_shared_entity_types():
+    # A shared node has no owning document (ADR-0036), so the properties
+    # that name its owner are absent; everything else still applies.
+    absent = {
+        prop["name"]
+        for prop in kg_schema.MANDATORY_PROPERTIES
+        if prop.get("absent_for_shared_entity_types")
+    }
+    assert absent == {"source_doc", "content_hash"}
