@@ -1,0 +1,15 @@
+{
+ "id": 100,
+ "rev": 1,
+ "url": "https://ado.example.test/DefaultCollection/Sample/_apis/wit/workItems/100",
+ "fields": {
+  "System.Id": 100,
+  "System.Rev": 1,
+  "System.WorkItemType": "Feature",
+  "System.Title": "Billing",
+  "System.State": "Active",
+  "System.AreaPath": "Sample\\Billing",
+  "System.IterationPath": "Sample\\Release 1",
+  "System.Description": "<div>Everything about invoices.</div>"
+ }
+}

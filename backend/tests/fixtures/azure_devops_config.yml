@@ -1,0 +1,17 @@
+# Source config for the synthetic Azure DevOps fixture project
+# (tests/fixtures/azure_devops). Run it with source_path
+# "fixture:<that directory>"; a live server takes its project URL and an
+# `auth` block naming environment variables (never the secrets themselves).
+name: Sample project
+area_paths:
+  - Sample\Billing
+requirement_id:
+  pattern: '\bBR[-\s]?(\d+)\b'
+  flags: IGNORECASE
+  format: 'BR-{:02d}'
+code_roots:
+  - name: billing
+    prefixes:
+      - $/Sample/Main/
+      - $/Sample/Dev/
+diff_globs: ['*.diff', '*.patch']

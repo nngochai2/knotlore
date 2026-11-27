@@ -3,14 +3,23 @@
  * SOURCES) and sink_types (SINKS, minus the test-only "dryrun"). Only
  * "neo4j" is wired to a real sink adapter today; a "vector" option isn't
  * listed until the vector-sink ticket registers "chroma" there. */
-export const SOURCE_TYPES: { value: string; label: string }[] = [
-  { value: "obsidian", label: "Obsidian vault" },
-  { value: "docx", label: "Documents folder" },
+export const SOURCE_TYPES: { value: string; label: string; pathPlaceholder: string }[] = [
+  { value: "obsidian", label: "Obsidian vault", pathPlaceholder: "/path/to/vault" },
+  { value: "docx", label: "Documents folder", pathPlaceholder: "/path/to/folder" },
+  {
+    value: "azure_devops",
+    label: "Azure DevOps project",
+    pathPlaceholder: "https://server/collection/project  (or fixture:/path/to/fixtures)",
+  },
 ];
 export const SINK_OPTIONS: { value: string; label: string }[] = [{ value: "neo4j", label: "Knowledge graph (Neo4j)" }];
 
 export function sourceLabel(sourceType: string): string {
   return SOURCE_TYPES.find((s) => s.value === sourceType)?.label ?? sourceType;
+}
+
+export function sourcePathPlaceholder(sourceType: string): string {
+  return SOURCE_TYPES.find((s) => s.value === sourceType)?.pathPlaceholder ?? "/path/to/vault-or-folder";
 }
 
 export function sinkLabel(sinks: string[]): string {

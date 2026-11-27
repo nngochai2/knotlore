@@ -1,0 +1,53 @@
+{
+ "id": 102,
+ "rev": 2,
+ "url": "https://ado.example.test/DefaultCollection/Sample/_apis/wit/workItems/102",
+ "fields": {
+  "System.Id": 102,
+  "System.Rev": 2,
+  "System.WorkItemType": "Bug",
+  "System.Title": "Rounding error on totals",
+  "System.State": "Closed",
+  "System.AreaPath": "Sample\\Billing",
+  "System.IterationPath": "Sample\\Release 1\\Sprint 2",
+  "Microsoft.VSTS.Scheduling.OriginalEstimate": 2.5,
+  "Microsoft.VSTS.TCM.ReproSteps": "<p>Totals are off by a cent, violating BR-02.</p>"
+ },
+ "relations": [
+  {
+   "rel": "System.LinkTypes.Related",
+   "url": "https://ado.example.test/DefaultCollection/Sample/_apis/wit/workItems/101",
+   "attributes": {}
+  },
+  {
+   "rel": "ArtifactLink",
+   "url": "vstfs:///VersionControl/Changeset/2001",
+   "attributes": {
+    "name": "Fixed in Changeset"
+   }
+  },
+  {
+   "rel": "ArtifactLink",
+   "url": "vstfs:///VersionControl/Changeset/2002",
+   "attributes": {
+    "name": "Fixed in Changeset"
+   }
+  },
+  {
+   "rel": "AttachedFile",
+   "url": "https://ado.example.test/DefaultCollection/_apis/wit/attachments/0a1b2c3d-0000-4000-8000-000000000201",
+   "attributes": {
+    "name": "rounding.PATCH",
+    "resourceSize": 300
+   }
+  },
+  {
+   "rel": "AttachedFile",
+   "url": "https://ado.example.test/DefaultCollection/_apis/wit/attachments/0a1b2c3d-0000-4000-8000-000000000202",
+   "attributes": {
+    "name": "huge.diff",
+    "resourceSize": 99999999
+   }
+  }
+ ]
+}

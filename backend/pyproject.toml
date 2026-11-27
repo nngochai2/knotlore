@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
     "httpx>=0.27",
+    "httpx-ntlm>=1.4.0",  # Azure DevOps Server username/password (Windows auth), ADR-0035
 ]
 
 [project.optional-dependencies]
