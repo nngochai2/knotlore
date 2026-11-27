@@ -354,15 +354,20 @@ def test_a_failed_attachment_download_fails_that_documents_load(project: Path) -
         adapter.load(docs[wi(101)])
 
 
-def test_username_and_password_default_to_ntlm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_username_and_password_default_to_ntlm(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # On-prem IIS usually only offers Windows auth. The fake server runs a
     # real NTLM handshake: 401 challenge-request, negotiate -> challenge,
-    # authenticate -> 200.
+    # authenticate -> 200. pyspnego's pure-Python NTLM acceptor (forced, so
+    # Windows doesn't use SSPI instead) reads the accepted credentials from
+    # NTLM_USER_FILE.
     import spnego
 
-    monkeypatch.setenv("ADO_USER", "svc")
+    users = tmp_path / "ntlm_users"
+    users.write_text("DOMAIN:svc:pw\n", encoding="utf-8")
+    monkeypatch.setenv("NTLM_USER_FILE", str(users))
+    monkeypatch.setenv("ADO_USER", r"DOMAIN\svc")
     monkeypatch.setenv("ADO_PASS", "pw")
-    server = spnego.server(protocol="ntlm")
+    server = spnego.server(protocol="ntlm", options=spnego.NegotiateOptions.use_ntlm)
     legs: list[str] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
@@ -376,6 +381,7 @@ def test_username_and_password_default_to_ntlm(monkeypatch: pytest.MonkeyPatch) 
             challenge = base64.b64encode(server.step(token) or b"").decode()
             return httpx.Response(401, headers={"WWW-Authenticate": f"NTLM {challenge}"})
         legs.append("authenticate")
+        server.step(token)  # raises unless the client proved the password
         return httpx.Response(200, json={"workItems": []})
 
     auth = {"username_env": "ADO_USER", "password_env": "ADO_PASS"}
