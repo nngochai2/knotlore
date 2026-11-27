@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues and PRDs live as GitHub issues in `nngochai2/loom`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues and PRDs live as GitHub issues in `nngochai2/knotlore`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

@@ -6,7 +6,7 @@ Knotlore is for teams maintaining long-lived systems whose real requirements liv
 
 > *Which requirements does this file touch, where are they specified, and which work items changed them?*
 
-> **Status: pre-release, working toward v0.1.** Document ingestion, the job API and the Ingest/Instances UI work today. The Azure DevOps Server adapter, the knowledge MCP server and the one-command quickstart are in progress; see the [v0.1 milestone](https://github.com/nngochai2/loom/milestones). The repo is being renamed from its working name, `loom`, so the code still uses that name in places.
+> **Status: pre-release, working toward v0.1.** Document ingestion, the job API and the Ingest/Instances UI work today. The Azure DevOps Server adapter, the knowledge MCP server and the one-command quickstart are in progress; see the [v0.1 milestone](https://github.com/nngochai2/knotlore/milestones). The project was renamed from its working name, `loom`, which the code still uses in places.
 
 ## How it works
 
