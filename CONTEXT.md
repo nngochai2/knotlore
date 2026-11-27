@@ -17,10 +17,10 @@ Not chunking parameters, not LLM prompts — Loom's extraction is deterministic 
 The stable, generated `id` on each `category_signal`/`named_extraction` entry in a rule file — distinct from its human-editable `name`. Never changes when the rule is renamed; is the join key for `corrections.originating_rule_id` (spec §6.4). See ADR-0005.
 
 ## Entity type / Relationship type
-Members of the fixed, versioned enum in `kg-schema/schema.json` (spec §5). Rule files map their output onto an existing type in this enum rather than declaring new Neo4j labels freely (ADR-0002). Starting vocabulary (ADR-0003):
+Members of the fixed, versioned enum in `kg-schema/schema.json` (spec §5). Rule files map their output onto an existing type in this enum rather than declaring new Neo4j labels freely (ADR-0002). Vocabulary as of `kg-schema` 1.2.0 (ADR-0003, ADR-0036):
 
-- **Entity types (seeded from NAA's real Obsidian classifier):** `ARCHITECTURE`, `CONVENTION`, `TASK`, `BUSINESS_TERM`, `NOTE`, `TAG`. Docx entity types ship empty — the first docx rule file authored requires a schema-version bump to add its type.
-- **Relationship types (full set lifted from NAA's wikilink-context keyword map):** `DEPENDS_ON`, `EXTENDS`, `USES`, `CONNECTS_TO`, `IMPLEMENTS`, `RELATES_TO`, `FIXES`, `RESOLVES`, `CAUSED_BY`, `FOLLOWS`, `VIOLATES`, `LINKS_TO` (default), `TAGGED_WITH` (tag-section links).
+- **Entity types:** Obsidian (seeded from NAA's real classifier): `ARCHITECTURE`, `CONVENTION`, `TASK`, `BUSINESS_TERM`, `NOTE`, `TAG`. Docx: `REQUIREMENT` (added in 1.1.0 by the first docx rule file; `BR` and similar are ID prefixes, not types). Traceability: `ISSUE`, `COMMIT`, `SOURCE_FILE` (the last is a [[shared entity type]]).
+- **Relationship types:** lifted from NAA's wikilink-context keyword map: `DEPENDS_ON`, `EXTENDS`, `USES`, `CONNECTS_TO`, `IMPLEMENTS`, `RELATES_TO`, `FIXES`, `RESOLVES`, `CAUSED_BY`, `FOLLOWS`, `VIOLATES`, `LINKS_TO` (default), `TAGGED_WITH` (tag-section links). Traceability: `REFERENCES` (commit → issue), `CHANGES` (commit/issue → source file), each with [[link provenance]].
 
 ## Origin
 Loom-native concept (not present in NAA at all — new for this project). One of `extracted` (pipeline-inferred), `explicit` (ground truth from the source itself, e.g. wikilinks), `curated` (human-edited via the graph canvas). See spec §5, §6.
